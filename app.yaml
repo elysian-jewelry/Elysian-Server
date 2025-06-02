@@ -1,7 +1,7 @@
 runtime: nodejs20
 env: standard
 
-instance_class: F1  # smallest, cost-effective
+instance_class: F1
 
 automatic_scaling:
   target_cpu_utilization: 0.65
@@ -9,3 +9,34 @@ automatic_scaling:
   max_instances: 2
 
 entrypoint: node src/server.js
+
+env_variables:
+  PORT: "8080"
+  NODE_ENV: "development"
+
+  # MySQL DB
+  MYSQL_HOST: "mysql-281cda23-elysian-d80e.h.aivencloud.com"
+  MYSQL_PORT: "26376"
+  MYSQL_USER: "avnadmin"
+  MYSQL_PASSWORD: "AVNS_QtPLNh4iXI5oKT2DqtF"
+  MYSQL_DB: "elysian"
+
+  # JWT Secret
+  JWT_SECRET: "s3cR3t!@#9v$E2z^T&dLr0*YqW+KbH1PfA%mNgXjUoC6bZiVxSwMtQnJg"
+
+  # Email
+  EMAIL_USER: "elysian.jewelry.eg@gmail.com"
+  EMAIL_PASS: "ahhhzhktewrlxsdo"
+
+  # Cloudinary
+  CLOUDINARY_CLOUD_NAME: "dlsemcp1y"
+  CLOUDINARY_API_KEY: "159824598417734"
+  CLOUDINARY_API_SECRET: "fSi-yjbtyQ8a42ls6_x4xaAuZuw"
+
+  # Google Sheets
+  GOOGLE_SPREAD_SHEET_ID: "1iyxwOz0Wpddh2E47Nw18pL4yb-axQeIZ7O1qrLfmju0"
+  GOOGLE_PRIVATE_KEY_ID: "48beb6508f04418c08396b107df3df23fceb944f"
+  GOOGLE_PRIVATE_KEY: 'your_private_key'  # Replace this carefully with escaped newlines
+  GOOGLE_CLIENT_EMAIL: "google-sheets@civil-planet-454803-m6.iam.gserviceaccount.com"
+  GOOGLE_CLIENT_ID: "your_client_id"
+  GOOGLE_CLIENT_X509_CERT_URL: "your_client_x509_cert_url"
