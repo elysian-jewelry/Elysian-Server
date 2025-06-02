@@ -1,21 +1,20 @@
-# Use Node.js LTS
-FROM node:20
+# Use the official Node.js LTS image
+FROM node:20-alpine
 
-# Create app directory
+# Set working directory inside the container
 WORKDIR /app
 
-# Copy package files & install
+# Copy only the package files first to leverage Docker layer caching
 COPY package*.json ./
-RUN npm install
 
-# Copy the rest of the app
+# Install dependencies
+RUN npm install --production
+
+# Copy the rest of your source code
 COPY . .
 
-# Set environment port
-ENV PORT=8080
-
-# Expose Cloud Run's port
+# Expose the port your app listens on (Cloud Run uses PORT env variable)
 EXPOSE 8080
 
-# Start your app (adjust path if needed)
-CMD ["node", "src/server.js"]
+# Start the app using the environment port
+CMD [ "node", "src/server.js" ]
