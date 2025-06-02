@@ -8,6 +8,8 @@ import { fileURLToPath } from "url";
 import sequelize from "./config/database.js";
 import { authenticateJWT } from "./middlewares/auth.middleware.js"; 
 
+
+
 dotenv.config();
 
 class App {
