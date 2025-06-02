@@ -1,0 +1,45 @@
+// controllers/user/profile.controller.js
+
+import User from "../../models/user.js";
+
+export const getUserProfile = async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+
+    const user = await User.findByPk(userId, {
+      attributes: { exclude: ["password"] },
+    });
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.json(user);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const updateUserProfile = async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+    const { address, governorate, apartment_no, city, postal_code, full_name } = req.body;
+
+    const user = await User.findByPk(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Update only allowed fields
+    user.full_name = full_name;
+    user.address = address;
+    user.governorate = governorate;
+    user.apartment_no = apartment_no;
+    user.city = city;
+    user.postal_code = postal_code;
+
+    await user.save();
+
+    res.json({ message: "Profile updated successfully", user });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to update profile" });
+  }
+};
