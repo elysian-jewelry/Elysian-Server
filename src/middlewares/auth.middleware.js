@@ -14,6 +14,7 @@ const excludedPaths = [
   "/users",
   "/upload-images",
   "/get-images",
+  "/products/update-quantity"
 ];
 
 export const authenticateJWT = (req, res, next) => {
