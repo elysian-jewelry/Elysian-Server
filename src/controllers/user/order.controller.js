@@ -6,6 +6,8 @@ import CartItem from "../../models/cartItem.js";
 import Product from "../../models/product.js";
 import PromoCode from "../../models/promoCode.js";
 import { Op } from "sequelize";
+import { sendOrderConfirmationEmail } from '../../middlewares/mailer.middleware.js';
+
 
 
 // Load your service account key
@@ -157,6 +159,7 @@ await cart.save();
     // Now update the Google Sheets with the cart items
     const sheetData = cart.CartItems.map((item) => [
       order.order_id,                      // Order ID
+      req.user.full_name,                     // User Name
       item.Product.type,            // Product Type
       item.Product.name,            // Product Name
       item.quantity,                        // Quantity
@@ -165,11 +168,21 @@ await cart.save();
       phone_number,                         // Mobile Number
       'Pending',                            // Status
       total_amount.toFixed(2),         // ✅ Total Amount
-      `${discount}%`                   // ✅ Discount %
+      `${discount}%`,                   // ✅ Discount %
     ]);
 
     // Call the function to update the Google Sheet
     await updateGoogleSheet(sheetData);  // Pass the data to updateGoogleSheet
+
+    // Send receipt email
+await sendOrderConfirmationEmail(req.user, order, cart.CartItems.map(item => ({
+  name: item.Product.name,
+  type: item.Product.type,
+  quantity: item.quantity,
+  size: item.size,
+  price: item.Product.price,
+})), discount);
+
 
     // ✅ Delete the promo code after use
 if (promo_code && discount > 0) {
