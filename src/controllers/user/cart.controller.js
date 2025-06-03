@@ -1,6 +1,7 @@
 import Cart from "../../models/cart.js";
 import CartItem from "../../models/cartItem.js";
 import Product from "../../models/product.js";
+import ProductImage  from "../../models/productImage.js";
 
 // Add product to cart
 export const addItemToCart = async (req, res) => {
@@ -220,18 +221,25 @@ export const getUserCart = async (req, res) => {
         attributes: ['cart_item_id', 'product_id', 'quantity', 'size'],
         include: {
           model: Product,
-          attributes: ['product_id', 'name', 'price', 'type']
-        }
-      }
+          attributes: ['product_id', 'name', 'price', 'type'],
+          include: {
+            model: ProductImage,
+            as: 'images', // << This must match the alias used in the association
+            where: { is_primary: true },
+            attributes: ['image_url'],
+            required: false,
+          },
+        },
+      },
     });
 
     if (!cart || cart.CartItems.length === 0) {
-      return res.status(404).json({ message: "Cart is empty" });
+      return res.status(404).json({ message: 'Cart is empty' });
     }
 
-    return res.status(200).json(cart);
+    return res.status(200).json({ success: true, cart });
   } catch (error) {
-    return res.status(500).json({ message: "Error fetching cart" });
+    console.error('Error fetching cart:', error);
+    return res.status(500).json({ message: 'Error fetching cart' });
   }
 };
-
