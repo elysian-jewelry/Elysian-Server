@@ -11,6 +11,80 @@ import ProductImage from '../../models/productImage.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+
+export const syncCloudinaryImages = async (req, res) => {
+  const productImages = {}; // { 'Earrings/Tiffany': [url1, url2] }
+  const notFoundProducts = [];
+  let nextCursor = null;
+
+  try {
+    // Step 1: Fetch all Cloudinary images and group by 'type/name'
+    do {
+      const result = await cloudinary.api.resources({
+        type: 'upload',
+        resource_type: 'image',
+        prefix: 'assets/',
+        max_results: 1500,
+        next_cursor: nextCursor
+      });
+
+      for (const resource of result.resources) {
+        const imageUrl = resource.secure_url;
+        const publicId = resource.public_id;
+        const folderPath = publicId.substring(0, publicId.lastIndexOf('/'));
+
+        const parts = folderPath.split('/');
+        if (parts.length < 3) continue;
+
+        const type = parts[1];
+        const name = decodeURIComponent(parts.slice(2).join('/'));
+        const key = `${type}/${name}`;
+
+        if (!productImages[key]) productImages[key] = [];
+        productImages[key].push(imageUrl);
+      }
+
+      nextCursor = result.next_cursor;
+    } while (nextCursor);
+
+    // Step 2: Fetch all products and attempt to match images
+    const products = await Product.findAll();
+
+    for (const product of products) {
+      const key = `${product.type}/${product.name}`;
+      const images = productImages[key];
+
+      if (!images || images.length === 0) {
+        notFoundProducts.push({ name: product.name, type: product.type });
+        continue;
+      }
+
+      for (let i = 0; i < images.length; i++) {
+        await ProductImage.create({
+          product_id: product.product_id,
+          image_url: images[i],
+          is_primary: i === 0
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Cloudinary images synced to product_images table.',
+      unmatchedProducts: notFoundProducts
+    });
+
+  } catch (error) {
+    console.error('Error syncing Cloudinary images:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to sync Cloudinary images.',
+      error: error.message
+    });
+  }
+};
+
+
 export const getAllImages = async (req, res) => {
   const groupedData = {};
 
@@ -21,14 +95,15 @@ export const getAllImages = async (req, res) => {
       const result = await cloudinary.api.resources({
         type: 'upload',
         resource_type: 'image',
-        prefix: '',
+        prefix: '', // fetch everything
         max_results: 500,
         next_cursor: nextCursor,
       });
 
       result.resources.forEach((resource) => {
-        const folder = resource.folder || 'Uncategorized'; // fallback if no folder
         const imageUrl = resource.secure_url;
+        const fullPath = resource.public_id; // e.g., assets/Bracelets/Marly/img1
+        const folder = fullPath.substring(0, fullPath.lastIndexOf('/')) || 'Uncategorized';
 
         if (!groupedData[folder]) {
           groupedData[folder] = [];
@@ -40,15 +115,15 @@ export const getAllImages = async (req, res) => {
       nextCursor = result.next_cursor;
     } while (nextCursor);
 
-    // format into array: [{ product: 'Marly', images: ['url1', 'url2', ...] }, ...]
-    const formattedData = Object.entries(groupedData).map(([product, images]) => ({
-      product,
+    // format into array: [{ folder: 'assets/Bracelets/Marly', images: [...] }, ...]
+    const formattedData = Object.entries(groupedData).map(([folder, images]) => ({
+      folder,
       images,
     }));
 
     return res.status(200).json({
       success: true,
-      message: 'Fetched product images by folder (product name)',
+      message: 'Fetched all images grouped by full folder path',
       data: formattedData,
     });
 
@@ -56,7 +131,7 @@ export const getAllImages = async (req, res) => {
     console.error('Cloudinary fetch error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch product images from Cloudinary.',
+      message: 'Failed to fetch images from Cloudinary.',
       error: error.message,
     });
   }
@@ -64,66 +139,58 @@ export const getAllImages = async (req, res) => {
 
 
 export const uploadImages = async (req, res) => {
-  const rootDir = path.resolve('C:\\Users\\samir\\Downloads\\Assets'); // Adjust path if needed
-  const productTypes = fs.readdirSync(rootDir);
+  const { parentFolder } = req.body;
+
+  if (!parentFolder) {
+    return res.status(400).json({ success: false, message: 'parentFolder is required in request body.' });
+  }
+
+  const rootDir = path.resolve(`C:\\Users\\samir\\Downloads\\${parentFolder}`);
+
+  if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) {
+    return res.status(400).json({ success: false, message: 'Provided parent folder does not exist or is not a directory.' });
+  }
 
   try {
-    for (const type of productTypes) {
-      const typePath = path.join(rootDir, type);
-      if (!fs.statSync(typePath).isDirectory()) continue;
+    const subFolders = fs.readdirSync(rootDir).filter(name =>
+      fs.statSync(path.join(rootDir, name)).isDirectory()
+    );
 
-      const productFolders = fs.readdirSync(typePath);
+    if (subFolders.length === 0) {
+      return res.status(400).json({ success: false, message: 'No folders found inside the provided parent folder.' });
+    }
 
-      for (const product of productFolders) {
-        const productPath = path.join(typePath, product);
-        if (!fs.statSync(productPath).isDirectory()) continue;
+    for (const folderName of subFolders) {
+      const folderPath = path.join(rootDir, folderName);
+      const imageFiles = fs.readdirSync(folderPath).filter(f => /\.(jpg|jpeg|png)$/i.test(f));
 
-        // Get product_id from DB
-        const dbProduct = await Product.findOne({
-          where: {
-            name: product,
-            type: type
-          }
+      if (imageFiles.length === 0) {
+        console.log(`No image files found in: ${folderName}`);
+        continue;
+      }
+
+      for (let i = 0; i < imageFiles.length; i++) {
+        const imgFile = imageFiles[i];
+        const localPath = path.join(folderPath, imgFile);
+
+        const uploadResult = await cloudinary.uploader.upload(localPath, {
+          folder: `assets/Necklaces/${folderName}`
         });
 
-        if (!dbProduct) {
-          console.log(`=================================================`);
-          console.log(`Product not found: ${type} / ${product}`);
-          console.log("=================================================");
-          continue;
-        }
-
-        const imageFiles = fs.readdirSync(productPath).filter(f => /\.(jpg|jpeg|png)$/i.test(f));
-
-        for (let i = 0; i < imageFiles.length; i++) {
-          const imgFile = imageFiles[i];
-          const localPath = path.join(productPath, imgFile);
-
-          const uploadResult = await cloudinary.uploader.upload(localPath, {
-            folder: `assets/${type}/${product}`
-          });
-
-          await ProductImage.create({
-            product_id: dbProduct.product_id,
-            image_url: uploadResult.secure_url,
-            is_primary: i === 0
-          });
-
-          console.log(`Uploaded: ${type}/${product}/${imgFile}`);
-        }
+        console.log(`Uploaded: ${folderName}/${imgFile}`);
       }
     }
 
     return res.status(200).json({
       success: true,
-      message: 'All product images uploaded and inserted to DB.'
+      message: `All subfolder images uploaded successfully under assets/<folder-name> in Cloudinary.`
     });
 
   } catch (error) {
     console.error('Upload error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to upload and store product images.',
+      message: 'Failed to upload images from subfolders.',
       error: error.message
     });
   }

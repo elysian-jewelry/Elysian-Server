@@ -14,6 +14,7 @@ const excludedPaths = [
   "/users",
   "/upload-images",
   "/get-images",
+  "/sync-images",
   "/products/update-quantity"
 ];
 

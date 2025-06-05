@@ -1,12 +1,13 @@
 import express from "express";
-import { uploadImages, getAllImages } from "../controllers/user/upload.controller.js";
+import { uploadImages, getAllImages, syncCloudinaryImages } from "../controllers/user/upload.controller.js";
 
 const router = express.Router();
 
 
 // Route to trigger image upload
-router.get('/upload-images', uploadImages);
+router.post('/upload-images', uploadImages);
 router.get('/get-images', getAllImages);
+router.post('/sync-images', syncCloudinaryImages);
 
 export default router;
 
