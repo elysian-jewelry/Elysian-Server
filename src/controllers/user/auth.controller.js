@@ -44,6 +44,7 @@ export const resetDatabase = async (req, res) => {
     DROP TABLE IF EXISTS orders;
     DROP TABLE IF EXISTS cart_items;
     DROP TABLE IF EXISTS carts;
+    DROP TABLE IF EXISTS product_variants;
     DROP TABLE IF EXISTS product_images;
     DROP TABLE IF EXISTS products;
     DROP TABLE IF EXISTS promo_codes;
@@ -85,6 +86,18 @@ export const resetDatabase = async (req, res) => {
       PRIMARY KEY (product_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+    CREATE TABLE product_variants (
+      variant_id INT NOT NULL AUTO_INCREMENT,
+      product_id INT NOT NULL,
+      size VARCHAR(50) NOT NULL,
+      price DECIMAL(10, 2) NOT NULL,
+      stock_quantity INT NOT NULL DEFAULT 0,
+      PRIMARY KEY (variant_id),
+      FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
+      UNIQUE (product_id, size)  -- to prevent duplicate sizes for the same product
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
     -- PRODUCT IMAGES
     CREATE TABLE product_images (
       image_id INT NOT NULL AUTO_INCREMENT,
@@ -109,13 +122,17 @@ export const resetDatabase = async (req, res) => {
     CREATE TABLE cart_items (
       cart_item_id INT NOT NULL AUTO_INCREMENT,
       cart_id INT NOT NULL,
-      product_id INT NOT NULL,
+      size VARCHAR(10) NULL, 
+      variant_id INT NULL,
+      product_id INT NULL,
       quantity INT NOT NULL DEFAULT 1,
-      size VARCHAR(50),
       PRIMARY KEY (cart_item_id),
       FOREIGN KEY (cart_id) REFERENCES carts(cart_id) ON DELETE CASCADE,
+      FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id) ON DELETE CASCADE,
       FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 
     -- ORDERS
     CREATE TABLE orders (
@@ -138,11 +155,14 @@ export const resetDatabase = async (req, res) => {
       order_item_id INT NOT NULL AUTO_INCREMENT,
       order_id INT NOT NULL,
       product_id INT NOT NULL,
+      size VARCHAR(10) NULL, -- ✅ size field added
+      variant_id INT NULL,
       quantity INT NOT NULL,
       price_at_time DECIMAL(10, 2) NOT NULL,
       PRIMARY KEY (order_item_id),
       FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
-      FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
+      FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
+      FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     -- INSERT PRODUCTS (simplified here with correct SQL structure)
@@ -258,7 +278,11 @@ export const resetDatabase = async (req, res) => {
     ('The OG', '', 490, 'Waist Chains', 10),
     ('The OG (double layered)', '', 490, 'Waist Chains', 10),
     ('Twisted', '', 490, 'Waist Chains', 10),
-    ('Vertical Gleam', '', 490, 'Waist Chains', 10)
+    ('Vertical Gleam', '', 490, 'Waist Chains', 10),
+    ('The OG', '', 680, 'Body Chains', 10),
+    ('Emerald', '', 680, 'Body Chains', 10),
+    ('Vertical Gleam', '', 680, 'Body Chains', 10)
+
 
   `;
 

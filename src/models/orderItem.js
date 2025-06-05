@@ -2,6 +2,7 @@ import { DataTypes } from 'sequelize';
 import sequelize from '../config/database.js';
 import Order from './order.js';
 import Product from './product.js';
+import ProductVariant from './productVariant.js';
 
 const OrderItem = sequelize.define('OrderItem', {
   order_item_id: {
@@ -27,6 +28,19 @@ const OrderItem = sequelize.define('OrderItem', {
     },
     onDelete: 'CASCADE',
   },
+  variant_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'product_variants',
+      key: 'variant_id',
+    },
+    onDelete: 'CASCADE',
+  },
+  size: {
+    type: DataTypes.STRING(10),
+    allowNull: true, // Optional size for non-variant products like Waist Chains
+  },
   quantity: {
     type: DataTypes.INTEGER,
     allowNull: false,
@@ -46,5 +60,8 @@ Order.hasMany(OrderItem, { foreignKey: 'order_id', onDelete: 'CASCADE' });
 
 OrderItem.belongsTo(Product, { foreignKey: 'product_id', onDelete: 'CASCADE' });
 Product.hasMany(OrderItem, { foreignKey: 'product_id', onDelete: 'CASCADE' });
+
+OrderItem.belongsTo(ProductVariant, { foreignKey: 'variant_id', onDelete: 'CASCADE' });
+ProductVariant.hasMany(OrderItem, { foreignKey: 'variant_id', onDelete: 'CASCADE' });
 
 export default OrderItem;

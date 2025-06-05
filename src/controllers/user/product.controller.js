@@ -1,5 +1,7 @@
 import Product from "../../models/product.js";
 import ProductImage from "../../models/productImage.js";
+import ProductVariant from "../../models/productVariant.js";
+
 
 
 // Update stock quantity for a product by name and type
@@ -32,28 +34,60 @@ export const updateProductQuantity = async (req, res) => {
   }
 };
 
+const formatProductResponse = (productsRaw) => {
+  return productsRaw.map(product => {
+    const plain = product.toJSON();
 
-// Get all products with max 4 images
+    // Build variants if any
+    const variants = plain.ProductVariants?.length
+      ? plain.ProductVariants.map(v => ({
+          variant_id: v.variant_id,
+          size: v.size,
+          price: v.price,
+          stock_quantity: v.stock_quantity
+        }))
+      : [];
+
+    // Remove ProductVariants from raw output
+    delete plain.ProductVariants;
+
+    // Attach variants only if present
+    if (variants.length > 0) {
+      plain.variants = variants;
+      delete plain.price; // remove product-level price if variants exist
+    }
+
+    return plain;
+  });
+};
+
+// Get all products with max 4 images + variants
 export const getAllProducts = async (req, res) => {
   try {
     const products = await Product.findAll({
-      include: [{
-        model: ProductImage,
-        as: 'images',
-        limit: 4,
-        attributes: ['image_url', 'is_primary']
-      }],
-      order: [['product_id', 'ASC']],
+      include: [
+        {
+          model: ProductImage,
+          as: "images",
+          limit: 4,
+          attributes: ["image_url", "is_primary"]
+        },
+        {
+          model: ProductVariant,
+          attributes: ["variant_id", "size", "price", "stock_quantity"]
+        }
+      ],
+      order: [["product_id", "ASC"]],
     });
 
-    res.status(200).json(products);
+    res.status(200).json(formatProductResponse(products));
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Error fetching products", error });
   }
 };
 
-// Get products by type with max 4 images
+// Get products by type with max 4 images + variants
 export const getProductsByType = async (req, res) => {
   try {
     const { type } = req.body;
@@ -64,16 +98,22 @@ export const getProductsByType = async (req, res) => {
 
     const products = await Product.findAll({
       where: { type },
-      include: [{
-        model: ProductImage,
-        as: 'images',
-        limit: 4,
-        attributes: ['image_url', 'is_primary']
-      }],
-      order: [['product_id', 'ASC']],
+      include: [
+        {
+          model: ProductImage,
+          as: "images",
+          limit: 4,
+          attributes: ["image_url", "is_primary"]
+        },
+        {
+          model: ProductVariant,
+          attributes: ["variant_id", "size", "price", "stock_quantity"]
+        }
+      ],
+      order: [["product_id", "ASC"]],
     });
 
-    res.status(200).json(products);
+    res.status(200).json(formatProductResponse(products));
   } catch (error) {
     res.status(500).json({ message: "Error fetching products by type", error });
   }
