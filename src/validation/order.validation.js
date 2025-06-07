@@ -1,10 +1,6 @@
 // validationSchema.js
 import Joi from "joi";
 
-const egyptianPhoneRule = Joi.string()
-  .pattern(/^(010|011|012|015)\d{8}$/)
-  .message("Phone number must be 11 digits, starting with 010, 011, 012, or 015")
-  .required();
 
 export const checkoutSchema = Joi.object({
   address: Joi.string().min(5).required().messages({
@@ -29,5 +25,10 @@ export const checkoutSchema = Joi.object({
     .messages({
       "any.only": `Governorate must be one of options}`,
     }),
-  phone_number: egyptianPhoneRule,
+  phone_number: Joi.string()
+  .pattern(/^\+201[0125]\d{8}$/)
+  .required()
+  .messages({
+    "string.pattern.base": "Phone number must start with +2010, +2011, +2012, or +2015 and be 13 digits in total",
+  }),
 });
