@@ -4,6 +4,8 @@ import OrderItem from "../../models/orderItem.js";
 import Cart from "../../models/cart.js";
 import CartItem from "../../models/cartItem.js";
 import Product from "../../models/product.js";
+import ProductVariant from "../../models/productVariant.js";
+import ProductImage from "../../models/productImage.js";
 import PromoCode from "../../models/promoCode.js";
 import { Op } from "sequelize";
 import { sendOrderConfirmationEmail } from '../../middlewares/mailer.middleware.js';
@@ -55,7 +57,6 @@ export const validatePromoCode = async (req, res) => {
 
 export const getUserOrders = async (req, res) => {
   const user_id = req.user.user_id;
-  
 
   try {
     const orders = await Order.findAll({
@@ -63,32 +64,79 @@ export const getUserOrders = async (req, res) => {
       include: [
         {
           model: OrderItem,
-          include: [Product],
+          include: [
+            {
+              model: Product,
+              attributes: ['product_id', 'name'],
+              include: [
+                {
+                  model: ProductImage,
+                  as: 'images',
+                  where: { is_primary: true },
+                  required: false,
+                  attributes: ['image_url'],
+                },
+              ],
+            },
+          ],
         },
       ],
-      order: [["order_date", "DESC"]],
+      order: [['order_date', 'DESC']],
     });
 
     if (!orders.length) {
-      return res.status(404).json({ message: "No orders found for this user." });
+      return res.status(404).json({ message: 'No orders found for this user.' });
     }
 
-    res.status(200).json(orders);
+    const formattedOrders = orders.map(order => ({
+      order_id: order.order_id,
+      order_date: order.order_date,
+      status: order.status,
+      subtotal: order.subtotal,
+      discount_percent: order.discount_percent,
+      total_amount: order.total_amount,
+      items: order.OrderItems.map(item => ({
+        product_id: item.product_id,
+        name: item.Product?.name || null,
+        quantity: item.quantity,
+        price: item.price,
+        size: item.size,
+        image_url: item.Product?.images?.[0]?.image_url || null,
+      })),
+    }));
+
+    res.status(200).json(formattedOrders);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error retrieving orders.", error });
+    res.status(500).json({ message: 'Error retrieving orders.', error });
   }
 };
+
+
 
 export const checkout = async (req, res) => {
   try {
     const user_id = req.user.user_id;
     const { address, apartment_no, city, governorate, phone_number, promo_code } = req.body;
 
-    // Find user's cart
+    // Find user's cart with product and variant info
     const cart = await Cart.findOne({
       where: { user_id },
-      include: [{ model: CartItem, include: [Product] }],
+      include: [
+        {
+          model: CartItem,
+          include: [
+            {
+              model: Product,
+              attributes: ['product_id', 'price'],
+            },
+            {
+              model: ProductVariant,
+              attributes: ['variant_id', 'price'],
+            }
+          ],
+        },
+      ],
     });
 
     if (!cart || cart.CartItems.length === 0) {
@@ -122,6 +170,8 @@ export const checkout = async (req, res) => {
     // Create order
     const order = await Order.create({
       user_id,
+      subtotal: cart.total_price,
+      discount_percent: discount,
       total_amount,
       address,
       apartment_no,
@@ -130,12 +180,16 @@ export const checkout = async (req, res) => {
       phone_number,
     });
 
-    // Add items to order
+   // Add items to order
     const orderItems = cart.CartItems.map((item) => ({
       order_id: order.order_id,
       product_id: item.product_id,
       quantity: item.quantity,
-      price_at_time: item.Product.price,
+      price: item.variant_id && item.ProductVariant
+        ? item.ProductVariant.price
+        : item.Product.price,
+      variant_id: item.variant_id || null,
+      size: item.size || null,
     }));
 
     await OrderItem.bulkCreate(orderItems);

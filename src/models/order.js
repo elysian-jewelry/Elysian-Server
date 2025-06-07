@@ -21,24 +21,28 @@ const Order = sequelize.define('Order', {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
   },
-  status: {
-    type: DataTypes.ENUM('Pending', 'Shipped', 'Delivered', 'Cancelled'),
-    defaultValue: 'pending',
+  subtotal: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+  },
+  discount_percent: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
   },
   total_amount: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
   },
   address: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: false,
   },
   apartment_no: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(50),
     allowNull: false,
   },
   city: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(100),
     allowNull: false,
   },
   governorate: {
@@ -46,8 +50,12 @@ const Order = sequelize.define('Order', {
     allowNull: false,
   },
   phone_number: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(20),
     allowNull: false,
+  },
+  status: {
+    type: DataTypes.ENUM('Pending', 'Shipped', 'Delivered', 'Cancelled'),
+    defaultValue: 'Pending',
   },
 }, {
   tableName: 'orders',

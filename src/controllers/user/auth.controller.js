@@ -78,7 +78,7 @@ export const resetDatabase = async (req, res) => {
       product_id INT NOT NULL AUTO_INCREMENT,
       name VARCHAR(255) NOT NULL,
       description TEXT,
-      price DECIMAL(10, 2) NOT NULL,
+      price DECIMAL(10, 2) NULL,
       type ENUM('Earrings', 'Necklaces', 'Bracelets', 'Hand Chains', 'Back Chains', 'Body Chains', 'Waist Chains', 'Sets') NOT NULL,
       stock_quantity INT NOT NULL DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -139,16 +139,19 @@ export const resetDatabase = async (req, res) => {
       order_id INT NOT NULL AUTO_INCREMENT,
       user_id INT NOT NULL,
       order_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+      subtotal DECIMAL(10, 2) NOT NULL,            -- Total before discount
+      discount_percent INT DEFAULT 0,             -- Discount applied (e.g., 15 for 15%)
+      total_amount DECIMAL(10, 2) NOT NULL,        -- Total after discount
       address VARCHAR(255) NOT NULL,
       apartment_no VARCHAR(50) NOT NULL,
       city VARCHAR(100) NOT NULL,
       governorate ENUM('Giza', 'Cairo', 'Alexandria', '6th Of October') NOT NULL,
       phone_number VARCHAR(20) NOT NULL,
       status ENUM('Pending', 'Shipped', 'Delivered', 'Cancelled') DEFAULT 'Pending',
-      total_amount DECIMAL(10, 2) NOT NULL,
       PRIMARY KEY (order_id),
       FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
     -- ORDER ITEMS
     CREATE TABLE order_items (
@@ -158,7 +161,7 @@ export const resetDatabase = async (req, res) => {
       size VARCHAR(10) NULL, -- ✅ size field added
       variant_id INT NULL,
       quantity INT NOT NULL,
-      price_at_time DECIMAL(10, 2) NOT NULL,
+      price DECIMAL(10, 2) NOT NULL,
       PRIMARY KEY (order_item_id),
       FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
       FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
