@@ -50,7 +50,7 @@ const Order = sequelize.define('Order', {
     allowNull: false,
   },
   governorate: {
-    type: DataTypes.ENUM('Giza', 'Cairo', 'Alexandria', '6th Of October'),
+     type: DataTypes.STRING(100),
     allowNull: false,
   },
   phone_number: {

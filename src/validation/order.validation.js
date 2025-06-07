@@ -6,34 +6,6 @@ const egyptianPhoneRule = Joi.string()
   .message("Phone number must be 11 digits, starting with 010, 011, 012, or 015")
   .required();
 
-const governorates = [
-  "Cairo",
-  "Giza",
-  "Alexandria",
-  "Dakahlia",
-  "Red Sea",
-  "Beheira",
-  "Fayoum",
-  "Gharbia",
-  "Ismailia",
-  "Monofia",
-  "Minya",
-  "Qaliubiya",
-  "New Valley",
-  "Suez",
-  "Aswan",
-  "Assiut",
-  "Beni Suef",
-  "Port Said",
-  "Damietta",
-  "Sharkia",
-  "Kafr El Sheikh",
-  "Matrouh",
-  "Luxor",
-  "Qena",
-  "Sohag"
-];
-
 export const checkoutSchema = Joi.object({
   address: Joi.string().min(5).required().messages({
     "string.empty": "Address cannot be empty",
@@ -52,11 +24,10 @@ export const checkoutSchema = Joi.object({
     .messages({
       "string.length": "Promo code must be exactly 6 characters",
     }),
-  governorate: Joi.string()
-    .valid(...governorates)
+  governorate: Joi.number()
     .required()
     .messages({
-      "any.only": `Governorate must be one of ${governorates.join(", ")}`,
+      "any.only": `Governorate must be one of options}`,
     }),
   phone_number: egyptianPhoneRule,
 });

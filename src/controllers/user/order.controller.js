@@ -167,40 +167,43 @@ export const checkout = async (req, res) => {
       discount = promo.discount;
     }
 
-    // Step 1: Define shipping rates
-const shippingRates = {
-  "alexandria": 90,
-  "assuit": 110,
-  "aswan": 120,
-  "bani suef": 110,
-  "behira": 110,
-  "cairo": 80,
-  "dakahlia": 90,
-  "damietta": 90,
-  "el kalioubia": 90,
-  "fayoum": 90,
-  "gharbia": 90,
-  "giza": 80,
-  "ismailia": 90,
-  "kafr el sheikh": 90,
-  "luxor": 120,
-  "matrouh": 120,
-  "menya": 110,
-  "monufia": 90,
-  "new valley": 140,
-  "north coast": 125,
-  "port said": 90,
-  "qena": 90,
-  "red sea": 120,
-  "sharqia": 90,
-  "sohag": 110,
-  "south sinai": 140,
-  "suez": 90,
-};
+const shippingRates = [
+  { id: 1, name: "Cairo", cost: 80 },
+  { id: 2, name: "Giza", cost: 80 },
+  { id: 3, name: "Sharqia", cost: 90 },
+  { id: 4, name: "Dakahlia", cost: 90 },
+  { id: 5, name: "Beheira", cost: 110 },
+  { id: 6, name: "Minya", cost: 110 },
+  { id: 7, name: "Qalyubia", cost: 90 },         // Corrected spelling from "El Kalioubia"
+  { id: 8, name: "Sohag", cost: 110 },
+  { id: 9, name: "Fayoum", cost: 90 },
+  { id: 10, name: "Assiut", cost: 110 },
+  { id: 11, name: "Monufia", cost: 90 },
+  { id: 12, name: "Alexandria", cost: 90 },
+  { id: 13, name: "Gharbia", cost: 90 },
+  { id: 14, name: "Kafr El Sheikh", cost: 90 },
+  { id: 15, name: "Bani Suef", cost: 110 },
+  { id: 16, name: "Qena", cost: 90 },
+  { id: 17, name: "Aswan", cost: 120 },
+  { id: 18, name: "Damietta", cost: 90 },
+  { id: 19, name: "Ismailia", cost: 90 },
+  { id: 20, name: "Matrouh", cost: 120 },
+  { id: 21, name: "Luxor", cost: 120 },
+  { id: 22, name: "Port Said", cost: 90 },
+  { id: 23, name: "Red Sea", cost: 120 },
+  { id: 24, name: "South Sinai", cost: 140 },
+  { id: 25, name: "New Valley", cost: 140 },
+  { id: 26, name: "North Coast", cost: 125 }
+];
 
-// Step 2: Determine shipping cost securely
-const normalizedGov = governorate.toLowerCase();
-const shipping_cost = shippingRates[normalizedGov] ?? 90; // fallback to 90 if not found
+// Step 2: Determine shipping cost from governorate ID
+const shippingData = shippingRates.find(entry => entry.id === Number(governorate));
+if (!shippingData) {
+  return res.status(400).json({ message: "Invalid governorate ID." });
+}
+const shipping_cost = shippingData.cost;
+const governorateName = shippingData.name;
+
 
     // Calculate total amount
     const total_amount = cart.total_price - (cart.total_price * (discount/100)) + shipping_cost;
@@ -215,7 +218,7 @@ const shipping_cost = shippingRates[normalizedGov] ?? 90; // fallback to 90 if n
       address,
       apartment_no,
       city,
-      governorate,
+      governorate: governorateName,
       phone_number,
     });
 
@@ -261,7 +264,7 @@ const subtotal = cart.total_price;
       item.Product.name,            // Product Name
       item.quantity,                        // Quantity
       item.size,                    // Size
-      `${address}, ${apartment_no}, ${city}, ${governorate}`, // Delivery Address
+      `${address}, ${apartment_no}, ${city}, ${governorateName}`, // Delivery Address
       phone_number,                         // Mobile Number
       'Pending',                            // Status
       total_amount.toFixed(2),         // ✅ Total Amount
