@@ -11,9 +11,8 @@ const passwordRule = Joi.string()
   .required();
 
 export const changePasswordSchema = Joi.object({
-  email: Joi.string().email().required(),
-  oldPassword: passwordRule,
-  newPassword: passwordRule
+  old_password: passwordRule,
+  new_password: passwordRule
 });
 
 

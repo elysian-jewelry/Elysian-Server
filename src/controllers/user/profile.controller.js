@@ -33,7 +33,7 @@ export const updateUserProfile = async (req, res) => {
 
     await user.save();
 
-    res.json({ message: "Profile updated successfully", user });
+    res.json({ message: "Profile updated successfully" });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Failed to update profile" });

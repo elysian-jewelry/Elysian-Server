@@ -453,8 +453,11 @@ export const verifyCodeAndSignup = async (req, res) => {
 
 export const changePassword = async (req, res) => {
   try {
-    const { oldPassword, newPassword } = req.body;
+    const { old_password, new_password } = req.body;
     const user_id = req.user.user_id;
+
+    console.log(req.user);
+    
 
     // Find the user by username
     const currentUser = await User.findOne({ user_id });
@@ -463,16 +466,16 @@ export const changePassword = async (req, res) => {
     }
 
     // Check if the old password matches
-    if (currentUser.password !== oldPassword) {
+    if (currentUser.password !== old_password) {
       return res.status(401).json({ message: "Invalid old password." });
     }
 
     // Ensure new password is different from the old password
-    if (oldPassword === newPassword) {
+    if (old_password === new_password) {
       return res.status(400).json({ message: "New password cannot be the same as the old password." });
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(new_password, 10);
 
     // Update the password and save it to the database
     currentUser.password = hashedPassword;
