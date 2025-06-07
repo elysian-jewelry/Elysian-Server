@@ -128,11 +128,11 @@ export const checkout = async (req, res) => {
           include: [
             {
               model: Product,
-              attributes: ['product_id', 'price', 'name', 'type'],
+              attributes: ['product_id', 'price', 'name', 'type', 'stock_quantity'],
             },
             {
               model: ProductVariant,
-              attributes: ['variant_id', 'price', 'size'],
+              attributes: ['variant_id', 'price', 'size', 'stock_quantity'],
             }
           ],
         },
@@ -194,9 +194,14 @@ export const checkout = async (req, res) => {
 
     await OrderItem.bulkCreate(orderItems);
 
-    // ⬇️ Decrement stock
 for (const item of cart.CartItems) {
-  if (item.Product.type !== 'Waist Chains') {
+  // If the item has a variant, update the variant's stock
+  if (item.variant_id && item.ProductVariant) {
+    item.ProductVariant.stock_quantity -= item.quantity;
+    await item.ProductVariant.save();
+  } else {
+    console.log("No variant found for item:", item.quantity);
+    console.log("No variant found for item:=======================================");
     item.Product.stock_quantity -= item.quantity;
     await item.Product.save();
   }
@@ -205,10 +210,9 @@ for (const item of cart.CartItems) {
     // Clear user's cart after checkout
     await CartItem.destroy({ where: { cart_id: cart.cart_id } });
 
-    
-// Reset cart total to 0
-cart.total_price = 0;
-await cart.save();
+    // Reset cart total to 0
+    cart.total_price = 0;
+    await cart.save();
 
     // Now update the Google Sheets with the cart items
     const sheetData = cart.CartItems.map((item) => [
