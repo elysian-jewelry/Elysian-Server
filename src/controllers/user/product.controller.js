@@ -3,6 +3,67 @@ import ProductImage from "../../models/productImage.js";
 import ProductVariant from "../../models/productVariant.js";
 
 
+const FEATURED_PRODUCT_IDS = [62, 109, 34]; // example featured product IDs
+const NEW_ARRIVAL_IDS = [75, 115, 52, 91];       // example new arrival product IDs
+
+
+export const getNewArrivalProducts = async (req, res) => {
+  try {
+    const products = await Product.findAll({
+      where: {
+        product_id: NEW_ARRIVAL_IDS
+      },
+      include: [
+        {
+          model: ProductImage,
+          as: "images",
+          limit: 4,
+          attributes: ["image_url", "is_primary"]
+        },
+        {
+          model: ProductVariant,
+          attributes: ["variant_id", "size", "price", "stock_quantity"]
+        }
+      ],
+      order: [["product_id", "ASC"]],
+    });
+
+    res.status(200).json(formatProductResponse(products));
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Error fetching new arrivals", error });
+  }
+};
+
+
+export const getFeaturedProducts = async (req, res) => {
+  try {
+    const products = await Product.findAll({
+      where: {
+        product_id: FEATURED_PRODUCT_IDS
+      },
+      include: [
+        {
+          model: ProductImage,
+          as: "images",
+          limit: 4,
+          attributes: ["image_url", "is_primary"]
+        },
+        {
+          model: ProductVariant,
+          attributes: ["variant_id", "size", "price", "stock_quantity"]
+        }
+      ],
+      order: [["product_id", "ASC"]],
+    });
+
+    res.status(200).json(formatProductResponse(products));
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Error fetching featured products", error });
+  }
+};
+
 
 // Update stock quantity for a product by name and type
 export const updateProductQuantity = async (req, res) => {
