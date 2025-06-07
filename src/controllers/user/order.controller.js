@@ -271,6 +271,7 @@ const subtotal = cart.total_price;
       `${discount}%`,                   // ✅ Discount %
       subtotal,             // ✅ Subtotal
       shipping_cost, 
+      new Date().toLocaleString()  
     ]);
 
     // Call the function to update the Google Sheet
@@ -310,7 +311,7 @@ export const updateGoogleSheet = async (sheetData) => {
     const sheets = google.sheets({ version: 'v4', auth: authClient });
 
     const spreadsheetId = process.env.GOOGLE_SPREAD_SHEET_ID; // from .env file
-    const range = 'Sheet1!A2:M';  // Adjust the range to start from row 2 downwards
+    const range = 'Sheet1!A2:N';  // Adjust the range to start from row 2 downwards
 
     const resource = { values: sheetData };
 
