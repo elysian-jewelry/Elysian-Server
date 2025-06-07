@@ -88,22 +88,25 @@ export const getUserOrders = async (req, res) => {
       return res.status(404).json({ message: 'No orders found for this user.' });
     }
 
-    const formattedOrders = orders.map(order => ({
-      order_id: order.order_id,
-      order_date: order.order_date,
-      status: order.status,
-      subtotal: order.subtotal,
-      discount_percent: order.discount_percent,
-      total_amount: order.total_amount,
-      items: order.OrderItems.map(item => ({
-        product_id: item.product_id,
-        name: item.Product?.name || null,
-        quantity: item.quantity,
-        price: item.price,
-        size: item.size,
-        image_url: item.Product?.images?.[0]?.image_url || null,
-      })),
-    }));
+   const formattedOrders = orders
+  .sort((a, b) => new Date(a.order_date) - new Date(b.order_date)) // sort by oldest
+  .map((order, index) => ({
+    order_id: index + 1,  // fake order_id starting from 1
+    order_date: order.order_date,
+    status: order.status,
+    subtotal: order.subtotal,
+    discount_percent: order.discount_percent,
+    total_amount: order.total_amount,
+    items: order.OrderItems.map(item => ({
+      product_id: item.product_id,
+      name: item.Product?.name || null,
+      quantity: item.quantity,
+      price: item.price,
+      size: item.size,
+      image_url: item.Product?.images?.[0]?.image_url || null,
+    })),
+  }));
+
 
     res.status(200).json(formattedOrders);
   } catch (error) {
