@@ -128,11 +128,11 @@ export const checkout = async (req, res) => {
           include: [
             {
               model: Product,
-              attributes: ['product_id', 'price'],
+              attributes: ['product_id', 'price', 'name', 'type'],
             },
             {
               model: ProductVariant,
-              attributes: ['variant_id', 'price'],
+              attributes: ['variant_id', 'price', 'size'],
             }
           ],
         },

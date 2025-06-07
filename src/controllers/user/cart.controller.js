@@ -92,9 +92,20 @@ export const addItemToCart = async (req, res) => {
         return res.status(400).json({ message: "This product does not support variants" });
       }
 
-      const existingItem = await CartItem.findOne({
-        where: { cart_id: cart.cart_id, variant_id: null, product_id: product_id , size: size}
-      });
+      
+
+      const whereClause = {
+  cart_id: cart.cart_id,
+  variant_id: null,
+  product_id: product_id,
+};
+
+if (size !== undefined) {
+  whereClause.size = size;
+}
+
+const existingItem = await CartItem.findOne({ where: whereClause });
+
 
       const totalQty = existingItem ? existingItem.quantity + quantity : quantity;
 
@@ -106,13 +117,19 @@ export const addItemToCart = async (req, res) => {
         existingItem.quantity = totalQty;
         await existingItem.save();
       } else {
-        await CartItem.create({
-          cart_id: cart.cart_id,
-          variant_id: null,
-          product_id: product_id,
-          size: size,
-          quantity
-        });
+       const newCartItem = {
+  cart_id: cart.cart_id,
+  variant_id: null,
+  product_id: product_id,
+  quantity
+};
+
+if (size !== undefined) {
+  newCartItem.size = size;
+}
+
+await CartItem.create(newCartItem);
+
       }
     }
 
