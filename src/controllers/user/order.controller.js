@@ -167,8 +167,43 @@ export const checkout = async (req, res) => {
       discount = promo.discount;
     }
 
+    // Step 1: Define shipping rates
+const shippingRates = {
+  "alexandria": 90,
+  "assuit": 110,
+  "aswan": 120,
+  "bani suef": 110,
+  "behira": 110,
+  "cairo": 80,
+  "dakahlia": 90,
+  "damietta": 90,
+  "el kalioubia": 90,
+  "fayoum": 90,
+  "gharbia": 90,
+  "giza": 80,
+  "ismailia": 90,
+  "kafr el sheikh": 90,
+  "luxor": 120,
+  "matrouh": 120,
+  "menya": 110,
+  "monufia": 90,
+  "new valley": 140,
+  "north coast": 125,
+  "port said": 90,
+  "qena": 90,
+  "red sea": 120,
+  "sharqia": 90,
+  "sohag": 110,
+  "south sinai": 140,
+  "suez": 90,
+};
+
+// Step 2: Determine shipping cost securely
+const normalizedGov = governorate.toLowerCase();
+const shipping_cost = shippingRates[normalizedGov] ?? 90; // fallback to 90 if not found
+
     // Calculate total amount
-    const total_amount = cart.total_price - (cart.total_price * (discount/100));
+    const total_amount = cart.total_price - (cart.total_price * (discount/100)) + shipping_cost;
 
     // Create order
     const order = await Order.create({
@@ -176,6 +211,7 @@ export const checkout = async (req, res) => {
       subtotal: cart.total_price,
       discount_percent: discount,
       total_amount,
+       shipping_cost,
       address,
       apartment_no,
       city,
@@ -231,6 +267,7 @@ const subtotal = cart.total_price;
       total_amount.toFixed(2),         // ✅ Total Amount
       `${discount}%`,                   // ✅ Discount %
       subtotal,             // ✅ Subtotal
+      shipping_cost, 
     ]);
 
     // Call the function to update the Google Sheet
@@ -270,7 +307,7 @@ export const updateGoogleSheet = async (sheetData) => {
     const sheets = google.sheets({ version: 'v4', auth: authClient });
 
     const spreadsheetId = process.env.GOOGLE_SPREAD_SHEET_ID; // from .env file
-    const range = 'Sheet1!A2:L';  // Adjust the range to start from row 2 downwards
+    const range = 'Sheet1!A2:M';  // Adjust the range to start from row 2 downwards
 
     const resource = { values: sheetData };
 

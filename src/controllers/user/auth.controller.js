@@ -144,6 +144,7 @@ export const resetDatabase = async (req, res) => {
       subtotal DECIMAL(10, 2) NOT NULL,            -- Total before discount
       discount_percent INT DEFAULT 0,             -- Discount applied (e.g., 15 for 15%)
       total_amount DECIMAL(10, 2) NOT NULL,        -- Total after discount
+      shipping_cost DECIMAL(10, 2) DEFAULT 0.00,
       address VARCHAR(255) NOT NULL,
       apartment_no VARCHAR(50) NOT NULL,
       city VARCHAR(100) NOT NULL,

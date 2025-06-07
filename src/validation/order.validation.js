@@ -6,7 +6,33 @@ const egyptianPhoneRule = Joi.string()
   .message("Phone number must be 11 digits, starting with 010, 011, 012, or 015")
   .required();
 
-const governorates = ["Giza", "Cairo", "Alexandria", "6th Of October"];
+const governorates = [
+  "Cairo",
+  "Giza",
+  "Alexandria",
+  "Dakahlia",
+  "Red Sea",
+  "Beheira",
+  "Fayoum",
+  "Gharbia",
+  "Ismailia",
+  "Monofia",
+  "Minya",
+  "Qaliubiya",
+  "New Valley",
+  "Suez",
+  "Aswan",
+  "Assiut",
+  "Beni Suef",
+  "Port Said",
+  "Damietta",
+  "Sharkia",
+  "Kafr El Sheikh",
+  "Matrouh",
+  "Luxor",
+  "Qena",
+  "Sohag"
+];
 
 export const checkoutSchema = Joi.object({
   address: Joi.string().min(5).required().messages({
