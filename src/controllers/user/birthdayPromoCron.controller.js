@@ -38,6 +38,9 @@ export const birthdayPromoCron = () => {
           discount: 20
         });
 
+        console.log(`🎉 Sent promo code ${promoCode} to user ${user.email}`);
+        
+
         // Send promo code email
         await sendBirthdayPromoCodeEmail(user, promoCode);
       }

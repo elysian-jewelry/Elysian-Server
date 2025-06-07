@@ -26,7 +26,8 @@ export const loginSchema = Joi.object({
 export const signupSchema = Joi.object({
   email: Joi.string().email().required(),
   password: passwordRule,
-  full_name: Joi.string().required(),
+  first_name: Joi.string().required(),
+  last_name: Joi.string().required(),
   birthday: Joi.date().iso().required(), 
 });
 

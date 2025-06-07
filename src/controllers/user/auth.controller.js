@@ -29,7 +29,8 @@ const generateToken = (user) => {
     {
       user_id: user.user_id,
       email: user.email,
-      full_name: user.full_name,
+      first_name: user.first_name,
+      last_name: user.last_name,
     },
     process.env.JWT_SECRET,
     { expiresIn: "7d" }
@@ -54,7 +55,8 @@ export const resetDatabase = async (req, res) => {
     CREATE TABLE users (
       user_id INT NOT NULL AUTO_INCREMENT,
       email VARCHAR(255) NOT NULL UNIQUE,
-      full_name VARCHAR(255) NOT NULL,
+      first_name VARCHAR(255) NOT NULL,
+      last_name VARCHAR(255) NOT NULL,
       password VARCHAR(255) NOT NULL,
       birthday DATE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -373,7 +375,8 @@ export const login = async (req, res) => {
       user: {
         user_id: currentUser.user_id,
         email: currentUser.email,
-        full_name: currentUser.full_name,
+        first_name: currentUser.first_name,
+        last_name: currentUser.last_name,
       },
     });
   } catch (err) {
@@ -384,7 +387,7 @@ export const login = async (req, res) => {
 
 export const signup = async (req, res) => {
   try {
-    const { email, full_name, password, birthday } = req.body;
+    const { email, first_name, last_name, password, birthday } = req.body;
 
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
@@ -395,10 +398,10 @@ export const signup = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);    
 
     // Store data temporarily
-    verificationStore.set(email, { code: verificationCode, full_name, hashedPassword, birthday });
+    verificationStore.set(email, { code: verificationCode, first_name, last_name, hashedPassword, birthday });
 
 
-    await sendVerificationCodeEmail(email, full_name, verificationCode);
+    await sendVerificationCodeEmail(email, first_name, last_name, verificationCode);
 
     res.status(200).json({ message: 'Verification code sent to your email.' });
   } catch (err) {
@@ -416,12 +419,13 @@ export const verifyCodeAndSignup = async (req, res) => {
       return res.status(400).json({ message: 'Invalid or expired verification code.' });
     }
 
-    const { full_name, hashedPassword, birthday } = stored;
+    const { first_name, last_name, hashedPassword, birthday } = stored;
 
     // Create user
     const newUser = await User.create({
       email,
-      full_name,
+      first_name,
+      last_name,
       password: hashedPassword,
       birthday
     });
@@ -436,7 +440,8 @@ export const verifyCodeAndSignup = async (req, res) => {
       user: {
         user_id: newUser.user_id,
         email: newUser.email,
-        full_name: newUser.full_name,
+        first_name: newUser.first_name,
+        last_name: newUser.last_name,
         birthday: newUser.birthday,
       },
     });

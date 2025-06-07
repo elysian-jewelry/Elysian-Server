@@ -8,7 +8,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-export const sendVerificationCodeEmail = async (email, full_name, verificationCode) => {
+export const sendVerificationCodeEmail = async (email, first_name, last_name, verificationCode) => {
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
@@ -16,7 +16,7 @@ export const sendVerificationCodeEmail = async (email, full_name, verificationCo
     html: `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #fff0f6; color: #111; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #f5c2d1; border-radius: 12px;">
         <h2 style="color: #d63384; text-align: center;">Welcome to <span style="color: #111;">Elysian Jewelry</span> 💖</h2>
-        <p style="font-size: 16px;">Dear <strong>${full_name || 'Guest'}</strong>,</p>
+        <p style="font-size: 16px;">Dear <strong>${first_name + ' ' + last_name || 'Guest'}</strong>,</p>
         <p style="font-size: 15px;">Thank you for choosing Elysian Jewelry! To complete your account setup, please use the verification code below:</p>
         <div style="text-align: center; margin: 25px 0;">
           <span style="font-size: 28px; font-weight: bold; color: #fff; background-color: #d63384; padding: 12px 30px; border-radius: 10px; letter-spacing: 3px;">${verificationCode}</span>
@@ -47,7 +47,7 @@ export const sendPasswordResetEmail = async (user, verificationCode) => {
     html: `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #fff0f6; color: #111; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #f5c2d1; border-radius: 12px;">
         <h2 style="color: #d63384; text-align: center;">Password Reset Request 🔒</h2>
-        <p style="font-size: 16px;">Dear <strong>${user.full_name || 'User'}</strong>,</p>
+        <p style="font-size: 16px;">Dear <strong>${user.first_name + ' ' + user.last_name || 'User'}</strong>,</p>
         <p style="font-size: 15px;">We received a request to reset your password. Please use the verification code below to proceed:</p>
         <div style="text-align: center; margin: 25px 0;">
           <span style="font-size: 28px; font-weight: bold; color: #fff; background-color: #d63384; padding: 12px 30px; border-radius: 10px; letter-spacing: 3px;">${verificationCode}</span>
@@ -85,9 +85,9 @@ export const sendOrderConfirmationEmail = async (user, order, items, discount) =
     <div style="font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #ffffff; max-width: 650px; margin: 40px auto; padding: 30px; border: 1px solid #f3f3f3; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); color: #111;">
       <h1 style="text-align: center; color: #ff4d88;">Elysian Jewelry 💗</h1>
 
-      <h2 style="color: #111; font-weight: 600;">Thank you for your order, <span style="color: #ff4d88;">${user.full_name || 'Valued Customer'}</span>!</h2>
+      <h2 style="color: #111; font-weight: 600;">Thank you for your order, <span style="color: #ff4d88;">${user.first_name + ' ' + user.last_name || 'Valued Customer'}</span>!</h2>
       <p style="font-size: 15px; margin-bottom: 20px; color: #111;">Here is your detailed receipt:</p>
-
+    
 
       <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background: #fffafa; border: 1px solid #fce4ec; border-radius: 8px; overflow: hidden;">
         <thead style="background-color: #ffe0eb;">
@@ -141,8 +141,8 @@ export const sendBirthdayPromoCodeEmail = async (user, promoCode) => {
     subject: "🎉 Happy Birthday from Elysian Jewelry 💗",
     html: `
       <div style="font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #fff; color: #111; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #ffc9dc; border-radius: 12px;">
-        <h2 style="color: #ff4d88; text-align: center;">Happy Birthday, <span style="color: #111;">${user.full_name || 'Lovely Soul'}!</span> 🎂💗</h2>
-        
+        <h2 style="color: #ff4d88; text-align: center;">Happy Birthday, <span style="color: #111;">${user.first_name + ' ' + user.last_name || 'Lovely Soul'}!</span> 🎂💗</h2>
+
         <p style="font-size: 16px; margin-top: 15px;">
           We're so glad to have you as part of the <strong>Elysian Jewelry</strong> family.
           To make your special day sparkle even more, here's a special gift just for you:
@@ -183,38 +183,6 @@ export const sendBirthdayPromoCodeEmail = async (user, promoCode) => {
 };
 
 
-
-// Function to send OTP email for payment verification
-export const sendPaymentOTPEmail = async (user, OTP) => {
-  const mailOptions = {
-    from: "tripify.planner@gmail.com",
-    to: user.email,
-    subject: "Your OTP for Payment Verification",
-    html: `
-      <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
-        <h2 style="color: #00695c;">Payment Verification OTP</h2>
-        <p>Dear ${user.name || 'User'},</p>
-        <p>To complete your payment, please use the following One-Time Password (OTP):</p>
-        <div style="font-size: 24px; font-weight: bold; color: #00695c; text-align: center; margin: 20px 0;">
-          ${OTP}
-        </div>
-        <p>This OTP is valid for the next 10 minutes. Please do not share this code with anyone.</p>
-        <p>If you did not request this OTP, please ignore this email.</p>
-        <p>Best regards,<br>Your Support Team</p>
-        <hr style="border: none; border-top: 1px solid #ddd;">
-        <p style="font-size: 12px; color: #999;">This is an automated message, please do not reply.</p>
-      </div>
-    `,
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log('OTP email sent successfully');
-  } catch (error) {
-    console.error('Error sending OTP email:', error);
-    throw new Error('Error sending OTP email');
-  }
-};
 
 
 

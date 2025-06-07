@@ -22,18 +22,14 @@ export const getUserProfile = async (req, res) => {
 export const updateUserProfile = async (req, res) => {
   try {
     const userId = req.user.user_id;
-    const { address, governorate, apartment_no, city, postal_code, full_name } = req.body;
+    const { address, governorate, apartment_no, city, postal_code, first_name, last_name } = req.body;
 
     const user = await User.findByPk(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     // Update only allowed fields
-    user.full_name = full_name;
-    user.address = address;
-    user.governorate = governorate;
-    user.apartment_no = apartment_no;
-    user.city = city;
-    user.postal_code = postal_code;
+    user.first_name = first_name;
+    user.last_name = last_name;
 
     await user.save();
 

@@ -200,12 +200,12 @@ for (const item of cart.CartItems) {
     item.ProductVariant.stock_quantity -= item.quantity;
     await item.ProductVariant.save();
   } else {
-    console.log("No variant found for item:", item.quantity);
-    console.log("No variant found for item:=======================================");
     item.Product.stock_quantity -= item.quantity;
     await item.Product.save();
   }
 }
+
+const subtotal = cart.total_price;
 
     // Clear user's cart after checkout
     await CartItem.destroy({ where: { cart_id: cart.cart_id } });
@@ -217,16 +217,17 @@ for (const item of cart.CartItems) {
     // Now update the Google Sheets with the cart items
     const sheetData = cart.CartItems.map((item) => [
       order.order_id,                      // Order ID
-      req.user.full_name,                     // User Name
+      req.user.first_name + ' ' + req.user.last_name,                     // User Name
       item.Product.type,            // Product Type
       item.Product.name,            // Product Name
       item.quantity,                        // Quantity
       item.size,                    // Size
-      `${address} ${apartment_no}, ${city}, ${governorate}`, // Delivery Address
+      `${address}, ${apartment_no}, ${city}, ${governorate}`, // Delivery Address
       phone_number,                         // Mobile Number
       'Pending',                            // Status
       total_amount.toFixed(2),         // ✅ Total Amount
       `${discount}%`,                   // ✅ Discount %
+      subtotal,             // ✅ Subtotal
     ]);
 
     // Call the function to update the Google Sheet
@@ -266,7 +267,7 @@ export const updateGoogleSheet = async (sheetData) => {
     const sheets = google.sheets({ version: 'v4', auth: authClient });
 
     const spreadsheetId = process.env.GOOGLE_SPREAD_SHEET_ID; // from .env file
-    const range = 'Sheet1!A2:J';  // Adjust the range to start from row 2 downwards
+    const range = 'Sheet1!A2:L';  // Adjust the range to start from row 2 downwards
 
     const resource = { values: sheetData };
 
