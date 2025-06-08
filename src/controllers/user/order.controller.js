@@ -120,7 +120,7 @@ export const getUserOrders = async (req, res) => {
 export const checkout = async (req, res) => {
   try {
     const user_id = req.user.user_id;
-    const { address, apartment_no, city, governorate, phone_number, promo_code } = req.body;
+    const { address, apartment_no, city, governorate, phone_number, promo_code, first_name, last_name } = req.body;
 
     // Find user's cart with product and variant info
     const cart = await Cart.findOne({
@@ -214,7 +214,7 @@ const governorateName = shippingData.name;
       subtotal: cart.total_price,
       discount_percent: discount,
       total_amount,
-       shipping_cost,
+      shipping_cost,
       address,
       apartment_no,
       city,
@@ -259,7 +259,8 @@ const subtotal = cart.total_price;
     // Now update the Google Sheets with the cart items
     const sheetData = cart.CartItems.map((item) => [
       order.order_id,                      // Order ID
-      req.user.first_name + ' ' + req.user.last_name,                     // User Name
+      // req.user.first_name + ' ' + req.user.last_name,            
+      first_name + ' ' + last_name,        // Customer Name`, 
       item.Product.type,            // Product Type
       item.Product.name,            // Product Name
       item.quantity,                        // Quantity
@@ -278,7 +279,7 @@ const subtotal = cart.total_price;
     await updateGoogleSheet(sheetData);  // Pass the data to updateGoogleSheet
 
     // Send receipt email
-await sendOrderConfirmationEmail(req.user, order, cart.CartItems.map(item => ({
+await sendOrderConfirmationEmail(first_name, last_name, order, cart.CartItems.map(item => ({
   name: item.Product.name,
   type: item.Product.type,
   quantity: item.quantity,

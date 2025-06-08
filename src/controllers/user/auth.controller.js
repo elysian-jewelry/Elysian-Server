@@ -55,10 +55,9 @@ export const resetDatabase = async (req, res) => {
     CREATE TABLE users (
       user_id INT NOT NULL AUTO_INCREMENT,
       email VARCHAR(255) NOT NULL UNIQUE,
-      first_name VARCHAR(255) NOT NULL,
-      last_name VARCHAR(255) NOT NULL,
-      password VARCHAR(255) NOT NULL,
-      birthday DATE,
+      first_name VARCHAR(255) NULL,
+      last_name VARCHAR(255) NULL,
+      birthday DATE NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (user_id)
@@ -356,60 +355,140 @@ export const getAllUsers = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email } = req.body;
 
     const currentUser = await User.findOne({ where: { email } });
     if (!currentUser) {
       return res.status(404).json({ message: "User not found." });
     }
 
-    const isMatch = await bcrypt.compare(password, currentUser.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid password." });
-    }
+    
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
+    const createdAt = new Date();
 
-    const token = generateToken(currentUser);
 
-    res.status(200).json({
-      message: "Login successful",
-      token, // ✅ Include JWT token in response
-      user: {
-        user_id: currentUser.user_id,
-        email: currentUser.email,
-        first_name: currentUser.first_name,
-        last_name: currentUser.last_name,
-      },
-    });
+    verificationStore.set(email, { code: verificationCode, createdAt });
+
+    await sendVerificationCodeEmail(email, verificationCode);
+
+
+    // const isMatch = await bcrypt.compare(password, currentUser.password);
+    // if (!isMatch) {
+    //   return res.status(401).json({ message: "Invalid password." });
+    // }
+
+    // const token = generateToken(currentUser);
+
+    // res.status(200).json({
+    //   message: "Login successful",
+    //   token, // ✅ Include JWT token in response
+    //   user: {
+    //     user_id: currentUser.user_id,
+    //     email: currentUser.email,
+    //     first_name: currentUser.first_name,
+    //     last_name: currentUser.last_name,
+    //   },
+    // });
+
+     res.status(200).json({ message: 'Verification code sent to your email.' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
-export const signup = async (req, res) => {
+export const verifyCodeAndLogin = async (req, res) => {
   try {
-    const { email, first_name, last_name, password, birthday } = req.body;
+    const { email, code } = req.body;
+    const stored = verificationStore.get(email);
 
-    const existingUser = await User.findOne({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({ message: 'Email already exists.' });
+    console.log(stored.code);
+    // console.log(code);
+    
+
+ if (!stored) {
+      return res.status(400).json({ message: 'No verification code found for this email.' });
     }
 
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
-    const hashedPassword = await bcrypt.hash(password, 10);    
+        const now = new Date();
+    const diffMinutes = (now - new Date(stored.createdAt)) / (1000 * 60);
 
-    // Store data temporarily
-    verificationStore.set(email, { code: verificationCode, first_name, last_name, hashedPassword, birthday });
+    if (diffMinutes > 5) {
+      verificationStore.delete(email);
+      return res.status(400).json({ message: 'Verification code expired. Please request a new one.' });
+    }
 
+    if (stored.code !== code) {
+      return res.status(400).json({ message: 'Invalid or expired verification code.' });
+    }
 
-    await sendVerificationCodeEmail(email, first_name, last_name, verificationCode);
+    // Remove code after verification
+    verificationStore.delete(email);
 
-    res.status(200).json({ message: 'Verification code sent to your email.' });
+    // Check if user already exists
+    let user = await User.findOne({ where: { email } });
+
+    if (user) {
+      const token = generateToken(user);
+      return res.status(200).json({
+        message: 'Login successful!',
+        token,
+        user: {
+          user_id: user.user_id,
+          email: user.email,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          birthday: user.birthday,
+        },
+      });
+    }
+
+    // Create new user if not exists
+    const newUser = await User.create({ email });
+    const token = generateToken(newUser);
+
+    return res.status(201).json({
+      message: 'User created successfully!',
+      token,
+      user: {
+        user_id: newUser.user_id,
+        email: newUser.email,
+      },
+    });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
+
+
+// export const signup = async (req, res) => {
+//   try {
+//     const { email, first_name, last_name, password, birthday } = req.body;
+
+//     const existingUser = await User.findOne({ where: { email } });
+//     if (existingUser) {
+//       return res.status(400).json({ message: 'Email already exists.' });
+//     }
+
+//     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
+//     const hashedPassword = await bcrypt.hash(password, 10);    
+
+//     // Store data temporarily
+//     verificationStore.set(email, { code: verificationCode, first_name, last_name, hashedPassword, birthday });
+
+
+//     await sendVerificationCodeEmail(email, first_name, last_name, verificationCode);
+
+//     res.status(200).json({ message: 'Verification code sent to your email.' });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ message: 'Server error', error: err.message });
+//   }
+// };
+
+
 
 export const verifyCodeAndSignup = async (req, res) => {
   try {

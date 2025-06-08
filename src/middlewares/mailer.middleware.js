@@ -8,20 +8,19 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-export const sendVerificationCodeEmail = async (email, first_name, last_name, verificationCode) => {
+export const sendVerificationCodeEmail = async (email, verificationCode) => {
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
-    subject: 'Verify Your Elysian Jewelry Signup',
+    subject: 'Elysian Jewelry Login Verification',
     html: `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #fff0f6; color: #111; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #f5c2d1; border-radius: 12px;">
-        <h2 style="color: #d63384; text-align: center;">Welcome to <span style="color: #111;">Elysian Jewelry</span> 💖</h2>
-        <p style="font-size: 16px;">Dear <strong>${first_name + ' ' + last_name || 'Guest'}</strong>,</p>
-        <p style="font-size: 15px;">Thank you for choosing Elysian Jewelry! To complete your account setup, please use the verification code below:</p>
+        <h2 style="color: #d63384; text-align: center;">Login Verification Code</h2>
+        <p style="font-size: 15px;">To continue logging into your Elysian Jewelry account, please use the verification code below:</p>
         <div style="text-align: center; margin: 25px 0;">
           <span style="font-size: 28px; font-weight: bold; color: #fff; background-color: #d63384; padding: 12px 30px; border-radius: 10px; letter-spacing: 3px;">${verificationCode}</span>
         </div>
-        <p style="font-size: 14px;"><strong>Note:</strong> This code will expire in 5 minutes. If you did not request this, you can safely ignore this email.</p>
+        <p style="font-size: 14px;"><strong>Note:</strong> This code will expire in 5 minutes. If you didn’t try to log in, you can safely ignore this email.</p>
         <p style="margin-top: 30px;">With sparkle and love, ✨<br><strong style="color: #d63384;">The Elysian Jewelry Team</strong></p>
         <hr style="margin-top: 40px; border: none; border-top: 1px solid #f5c2d1;">
         <p style="font-size: 12px; color: #888; text-align: center;">This is an automated message. Please do not reply.</p>
@@ -31,7 +30,7 @@ export const sendVerificationCodeEmail = async (email, first_name, last_name, ve
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log('Verification email sent successfully');
+    console.log('Login verification email sent successfully');
   } catch (error) {
     console.error('Error sending verification email:', error);
     throw new Error('Error sending email');
@@ -70,7 +69,7 @@ export const sendPasswordResetEmail = async (user, verificationCode) => {
 };
 
 
-export const sendOrderConfirmationEmail = async (user, order, items, discount) => {
+export const sendOrderConfirmationEmail = async (first_name, last_name, order, items, discount) => {
   const productListHtml = items.map(item => `
     <tr style="border-bottom: 1px solid #eee;">
       <td style="padding: 10px;">${item.name}</td>
@@ -85,7 +84,7 @@ export const sendOrderConfirmationEmail = async (user, order, items, discount) =
     <div style="font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #ffffff; max-width: 650px; margin: 40px auto; padding: 30px; border: 1px solid #f3f3f3; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); color: #111;">
       <h1 style="text-align: center; color: #ff4d88;">Elysian Jewelry 💗</h1>
 
-      <h2 style="color: #111; font-weight: 600;">Thank you for your order, <span style="color: #ff4d88;">${user.first_name + ' ' + user.last_name || 'Valued Customer'}</span>!</h2>
+      <h2 style="color: #111; font-weight: 600;">Thank you for your order, <span style="color: #ff4d88;">${first_name + ' ' + last_name || 'Valued Customer'}</span>!</h2>
       <p style="font-size: 15px; margin-bottom: 20px; color: #111;">Here is your detailed receipt:</p>
     
 

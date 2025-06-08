@@ -4,7 +4,7 @@ const excludedPaths = [
   "/auth/login",
   "/auth/signup",
   "/auth/password/send-code",
-  "/auth/verify-code-signup",
+  "/auth/verify-code-login",
   "/auth/password/verify-code",
   "/auth/password/reset",
   "/auth/password/change",

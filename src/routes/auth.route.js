@@ -1,8 +1,8 @@
 import express from "express";
 import {
   login,
-  signup,
-  verifyCodeAndSignup,
+  // signup,
+  verifyCodeAndLogin,
   sendVerificationCode,
   verifyCode,
   resetPassword,
@@ -22,8 +22,8 @@ router.post('/reset-db', resetDatabase);
 router.get("/users", getAllUsers);
 // Auth Routes
 router.post("/auth/login", validate(loginSchema, "body"), login);
-router.post("/auth/signup", validate(signupSchema, "body"), signup);
-router.post("/auth/verify-code-signup", verifyCodeAndSignup);
+// router.post("/auth/signup", validate(signupSchema, "body"), signup);
+router.post("/auth/verify-code-login", verifyCodeAndLogin);
 
 // Password-related
 router.post("/auth/password/send-code", sendVerificationCode);

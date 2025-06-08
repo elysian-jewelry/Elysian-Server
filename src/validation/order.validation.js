@@ -20,6 +20,16 @@ export const checkoutSchema = Joi.object({
     .messages({
       "string.length": "Promo code must be exactly 6 characters",
     }),
+    first_name: Joi.string()
+    .required()
+    .messages({
+      "string.length": "First name must be included",
+    }),
+    last_name: Joi.string()
+    .required()
+    .messages({
+      "string.length": "Last name must be included",
+    }),
   governorate: Joi.number()
     .required()
     .messages({
