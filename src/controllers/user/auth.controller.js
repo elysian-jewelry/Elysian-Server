@@ -356,8 +356,6 @@ export const getAllUsers = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email } = req.body;
-
-  
     
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
     const createdAt = new Date();
@@ -415,7 +413,7 @@ export const verifyCodeAndLogin = async (req, res) => {
     }
 
     if (stored.code !== code) {
-      return res.status(400).json({ message: 'Invalid or expired verification code.' });
+      return res.status(400).json({ message: 'Invalid verification code.' });
     }
 
     // Remove code after verification
