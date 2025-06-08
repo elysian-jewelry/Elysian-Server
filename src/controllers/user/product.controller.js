@@ -3,7 +3,7 @@ import ProductImage from "../../models/productImage.js";
 import ProductVariant from "../../models/productVariant.js";
 
 
-const FEATURED_PRODUCT_IDS = [62, 109, 34]; // example featured product IDs
+const FEATURED_PRODUCT_IDS = [62, 109, 34, 94]; // example featured product IDs
 const NEW_ARRIVAL_IDS = [75, 115, 52, 91];       // example new arrival product IDs
 
 
