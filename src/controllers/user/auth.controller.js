@@ -357,11 +357,7 @@ export const login = async (req, res) => {
   try {
     const { email } = req.body;
 
-    const currentUser = await User.findOne({ where: { email } });
-    if (!currentUser) {
-      return res.status(404).json({ message: "User not found." });
-    }
-
+  
     
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
     const createdAt = new Date();
