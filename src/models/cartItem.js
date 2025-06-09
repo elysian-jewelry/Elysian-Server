@@ -21,7 +21,6 @@ const cartItemSchema = new mongoose.Schema(
     },
     size: {
       type: String,
-      enum: ["S/M", "M/L", "Small", "Medium", "Large", null],
       default: null,
     },
     quantity: {
