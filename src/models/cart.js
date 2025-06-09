@@ -1,24 +1,30 @@
-import { DataTypes } from "sequelize";
-import sequelize from "../config/database.js";
-import User from "./user.js";
+import mongoose from "mongoose";
 
-const Cart = sequelize.define("Cart", {
-  cart_id: {
-    type: DataTypes.INTEGER,
-    autoIncrement: true,
-    primaryKey: true,
+const cartSchema = new mongoose.Schema(
+  {
+    user_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      unique: true  // Ensures one cart per user
+    },
+    total_price: {
+      type: Number,
+      default: 0.0,
+    },
+    items: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "CartItem",
+      },
+    ],
   },
-  total_price: {
-    type: DataTypes.DECIMAL(10, 2),
-    defaultValue: 0.00,
-  },
-}, {
-  tableName: "carts",
-  timestamps: false,
-});
+  {
+    collection: "carts",
+    timestamps: true,
+  }
+);
 
-// One-to-one: Each user has one cart
-Cart.belongsTo(User, { foreignKey: "user_id" });
-User.hasOne(Cart, { foreignKey: "user_id" });
+const Cart = mongoose.model("Cart", cartSchema);
 
 export default Cart;

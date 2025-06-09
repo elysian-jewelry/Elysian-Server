@@ -279,7 +279,7 @@ const subtotal = cart.total_price;
     await updateGoogleSheet(sheetData);  // Pass the data to updateGoogleSheet
 
     // Send receipt email
-await sendOrderConfirmationEmail(first_name, last_name, order, cart.CartItems.map(item => ({
+await sendOrderConfirmationEmail(req.user.email, first_name, last_name, order, cart.CartItems.map(item => ({
   name: item.Product.name,
   type: item.Product.type,
   quantity: item.quantity,
