@@ -1,67 +1,43 @@
-import { DataTypes } from 'sequelize';
-import sequelize from '../config/database.js';
-import Order from './order.js';
-import Product from './product.js';
-import ProductVariant from './productVariant.js';
+// models/OrderItem.js
 
-const OrderItem = sequelize.define('OrderItem', {
-  order_item_id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true,
-  },
-  order_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: 'orders',
-      key: 'order_id',
+import mongoose from "mongoose";
+
+const orderItemSchema = new mongoose.Schema(
+  {
+    order_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+      required: true,
     },
-    onDelete: 'CASCADE',
-  },
-  product_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: 'products',
-      key: 'product_id',
+    product_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: true,
     },
-    onDelete: 'CASCADE',
-  },
-  variant_id: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    references: {
-      model: 'product_variants',
-      key: 'variant_id',
+    variant_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProductVariant",
+      default: null,
     },
-    onDelete: 'CASCADE',
+    size: {
+      type: String,
+      default: null,
+    },
+    quantity: {
+      type: Number,
+      required: true,
+    },
+    price: {
+      type: mongoose.Types.Decimal128,
+      required: true,
+    },
   },
-  size: {
-    type: DataTypes.STRING(10),
-    allowNull: true, // Optional size for non-variant products like Waist Chains
-  },
-  quantity: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-  },
-  price: {
-    type: DataTypes.DECIMAL(10, 2),
-    allowNull: false,
-  },
-}, {
-  tableName: 'order_items',
-  timestamps: false,
-});
+  {
+    collection: "order_items",
+    timestamps: false,
+  }
+);
 
-// Associations
-OrderItem.belongsTo(Order, { foreignKey: 'order_id', onDelete: 'CASCADE' });
-Order.hasMany(OrderItem, { foreignKey: 'order_id', onDelete: 'CASCADE' });
-
-OrderItem.belongsTo(Product, { foreignKey: 'product_id', onDelete: 'CASCADE' });
-Product.hasMany(OrderItem, { foreignKey: 'product_id', onDelete: 'CASCADE' });
-
-OrderItem.belongsTo(ProductVariant, { foreignKey: 'variant_id', onDelete: 'CASCADE' });
-ProductVariant.hasMany(OrderItem, { foreignKey: 'variant_id', onDelete: 'CASCADE' });
+const OrderItem = mongoose.model("OrderItem", orderItemSchema);
 
 export default OrderItem;

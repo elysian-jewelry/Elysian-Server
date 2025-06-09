@@ -1,7 +1,15 @@
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 import User from "../../models/user.js";
-import { Op } from "sequelize";
+import Product from "../../models/product.js";
 import PromoCode from "../../models/promoCode.js";
+import ProductVariant from "../../models/productVariant.js";
+import ProductImage from "../../models/productImage.js";
+import Cart from "../../models/cart.js";
+import CartItem from "../../models/cartItem.js";
+import Order from "../../models/order.js";
+import OrderItem from "../../models/orderItem.js";
+import { Op } from "sequelize";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
 import { sendPasswordResetEmail,sendVerificationCodeEmail, sendBirthdayPromoCodeEmail  } from "../../middlewares/mailer.middleware.js"; // your custom mail sender
@@ -27,8 +35,9 @@ const generatePromoCode = () => {
 const generateToken = (user) => {
   return jwt.sign(
     {
-      user_id: user.user_id,
+      user_id: user._id,
       email: user.email,
+      birthday: user.birthday,
       first_name: user.first_name,
       last_name: user.last_name,
     },
@@ -39,266 +48,470 @@ const generateToken = (user) => {
 
 
 export const resetDatabase = async (req, res) => {
-  const resetQueries = `
-    -- Drop tables in the correct order
-    DROP TABLE IF EXISTS order_items;
-    DROP TABLE IF EXISTS orders;
-    DROP TABLE IF EXISTS cart_items;
-    DROP TABLE IF EXISTS carts;
-    DROP TABLE IF EXISTS product_variants;
-    DROP TABLE IF EXISTS product_images;
-    DROP TABLE IF EXISTS products;
-    DROP TABLE IF EXISTS promo_codes;
-    DROP TABLE IF EXISTS users;
-
-    -- USERS
-    CREATE TABLE users (
-      user_id INT NOT NULL AUTO_INCREMENT,
-      email VARCHAR(255) NOT NULL UNIQUE,
-      first_name VARCHAR(255) NULL,
-      last_name VARCHAR(255) NULL,
-      birthday DATE NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (user_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-    -- PROMO CODES
-    CREATE TABLE promo_codes (
-      promo_code_id INT NOT NULL AUTO_INCREMENT,
-      user_id INT NOT NULL,
-      promo_code VARCHAR(50) NOT NULL UNIQUE,
-      expiry_date DATE NOT NULL,
-      discount INT NOT NULL DEFAULT 0,
-      PRIMARY KEY (promo_code_id),
-      FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-    -- PRODUCTS
-    CREATE TABLE products (
-      product_id INT NOT NULL AUTO_INCREMENT,
-      name VARCHAR(255) NOT NULL,
-      description TEXT,
-      price DECIMAL(10, 2) NULL,
-      type ENUM('Earrings', 'Necklaces', 'Bracelets', 'Hand Chains', 'Back Chains', 'Body Chains', 'Waist Chains', 'Sets') NOT NULL,
-      stock_quantity INT NOT NULL DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (product_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
-    CREATE TABLE product_variants (
-      variant_id INT NOT NULL AUTO_INCREMENT,
-      product_id INT NOT NULL,
-      size VARCHAR(50) NOT NULL,
-      price DECIMAL(10, 2) NOT NULL,
-      stock_quantity INT NOT NULL DEFAULT 0,
-      PRIMARY KEY (variant_id),
-      FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
-      UNIQUE (product_id, size)  -- to prevent duplicate sizes for the same product
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-    -- PRODUCT IMAGES
-    CREATE TABLE product_images (
-      image_id INT NOT NULL AUTO_INCREMENT,
-      product_id INT NOT NULL,
-      image_url TEXT NOT NULL,
-      is_primary BOOLEAN DEFAULT FALSE,
-      PRIMARY KEY (image_id),
-      FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-    -- CARTS
-    CREATE TABLE carts (
-      cart_id INT NOT NULL AUTO_INCREMENT,
-      user_id INT NOT NULL,
-      total_price DECIMAL(10, 2) DEFAULT 0.00,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (cart_id),
-      FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-    -- CART ITEMS
-    CREATE TABLE cart_items (
-      cart_item_id INT NOT NULL AUTO_INCREMENT,
-      cart_id INT NOT NULL,
-      size VARCHAR(10) NULL, 
-      variant_id INT NULL,
-      product_id INT NULL,
-      quantity INT NOT NULL DEFAULT 1,
-      PRIMARY KEY (cart_item_id),
-      FOREIGN KEY (cart_id) REFERENCES carts(cart_id) ON DELETE CASCADE,
-      FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id) ON DELETE CASCADE,
-      FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
-
-    -- ORDERS
-    CREATE TABLE orders (
-      order_id INT NOT NULL AUTO_INCREMENT,
-      user_id INT NOT NULL,
-      order_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-      subtotal DECIMAL(10, 2) NOT NULL,            -- Total before discount
-      discount_percent INT DEFAULT 0,             -- Discount applied (e.g., 15 for 15%)
-      total_amount DECIMAL(10, 2) NOT NULL,        -- Total after discount
-      shipping_cost DECIMAL(10, 2) DEFAULT 0.00,
-      address VARCHAR(255) NOT NULL,
-      apartment_no VARCHAR(50) NOT NULL,
-      city VARCHAR(100) NOT NULL,
-      governorate ENUM('Giza', 'Cairo', 'Alexandria', '6th Of October') NOT NULL,
-      phone_number VARCHAR(20) NOT NULL,
-      status ENUM('Pending', 'Shipped', 'Delivered', 'Cancelled') DEFAULT 'Pending',
-      PRIMARY KEY (order_id),
-      FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
-    -- ORDER ITEMS
-    CREATE TABLE order_items (
-      order_item_id INT NOT NULL AUTO_INCREMENT,
-      order_id INT NOT NULL,
-      product_id INT NOT NULL,
-      size VARCHAR(10) NULL, -- ✅ size field added
-      variant_id INT NULL,
-      quantity INT NOT NULL,
-      price DECIMAL(10, 2) NOT NULL,
-      PRIMARY KEY (order_item_id),
-      FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
-      FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
-      FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-    -- INSERT PRODUCTS (simplified here with correct SQL structure)
-    INSERT INTO products (name, description, price, type, stock_quantity) VALUES
-    ('Bling', '', 220, 'Bracelets', 10),
-    ('Blue Pearl', '', 250, 'Bracelets', 10),
-    ('Emerald', '', 250, 'Bracelets', 10),
-    ('Emerald Seas (in dark green)', '', 250, 'Bracelets', 10),
-    ('Emerald Seas (in light green)', '', 250, 'Bracelets', 10),
-    ('Figaro', '', 220, 'Bracelets', 10),
-    ('Green Pearl', '', 250, 'Bracelets', 10),
-    ('Large Cuff', '', 390, 'Bracelets', 10),
-    ('Lock and Key', '', 230, 'Bracelets', 10),
-    ('Maris Pearl', '', 250, 'Bracelets', 10),
-    ('Paper Clip', '', 210, 'Bracelets', 10),
-    ('Purple Stones', '', 250, 'Bracelets', 10),
-    ('Rainbow', '', 220, 'Bracelets', 10),
-    ('Rod', '', 220, 'Bracelets', 10),
-    ('Scarlet', '', 230, 'Bracelets', 10),
-    ('Seashell', '', 290, 'Bracelets', 10),
-    ('Small Cuff', '', 350, 'Bracelets', 10),
-    ('Tiffany', '', 230, 'Bracelets', 10),
-    ('Twisted', '', 210, 'Bracelets', 10),
-    ('Bloom', '', 350, 'Earrings', 10),
-    ('Blue Drip', '', 350, 'Earrings', 10),
-    ('Blue Starfish', '', 350, 'Earrings', 10),
-    ('Constellations', '', 350, 'Earrings', 10),
-    ('Coral', '', 490, 'Earrings', 10),
-    ('Engraved Eternal', '', 250, 'Earrings', 10),
-    ('Eternal', '', 220, 'Earrings', 10),
-    ('Green Hues', '', 290, 'Earrings', 10),
-    ('La Perle', '', 350, 'Earrings', 10),
-    ('Mini Seashell', '', 210, 'Earrings', 10),
-    ('Paper Clip', '', 290, 'Earrings', 10),
-    ('Pearl Nest', '', 350, 'Earrings', 10),
-    ('Pearl Petal', '', 290, 'Earrings', 10),
-    ('Pearly Eternal', '', 290, 'Earrings', 10),
-    ('Pearly Starfish', '', 350, 'Earrings', 10),
-    ('Pink Hues', '', 350, 'Earrings', 10),
-    ('Seashell', '', 250, 'Earrings', 10),
-    ('Seashore', '', 450, 'Earrings', 10),
-    ('Sparkly Starfish', '', 290, 'Earrings', 10),
-    ('Starfish', '', 350, 'Earrings', 10),
-    ('Starlight (in blue)', '', 350, 'Earrings', 10),
-    ('Starlight (in green)', '', 350, 'Earrings', 10),
-    ('Starlight (in white)', '', 350, 'Earrings', 10),
-    ('Starry Night', '', 350, 'Earrings', 10),
-    ('Tiffany', '', 300, 'Earrings', 10),
-    ('Triple Pearl', '', 350, 'Earrings', 10),
-    ('Bling', '', 340, 'Hand Chains', 10),
-    ('Blue Aura', '', 340, 'Hand Chains', 10),
-    ('Bold', '', 340, 'Hand Chains', 10),
-    ('Emerald', '', 400, 'Hand Chains', 10),
-    ('Gemstone', '', 450, 'Hand Chains', 10),
-    ('Green Aura', '', 340, 'Hand Chains', 10),
-    ('Marly', '', 400, 'Hand Chains', 10),
-    ('Mix and Match', '', 340, 'Hand Chains', 10),
-    ('Ocean Pearl', '', 400, 'Hand Chains', 10),
-    ('Pearly', '', 340, 'Hand Chains', 10),
-    ('Plain V (in gold)', '', 340, 'Hand Chains', 10),
-    ('Plain V (in silver)', '', 340, 'Hand Chains', 10),
-    ('Red Aura', '', 340, 'Hand Chains', 10),
-    ('Rod', '', 340, 'Hand Chains', 10),
-    ('Scarlet', '', 340, 'Hand Chains', 10),
-    ('The Golden Ovoid', '', 340, 'Hand Chains', 10),
-    ('The OG (in gold)', '', 340, 'Hand Chains', 10),
-    ('The OG (in silver)', '', 340, 'Hand Chains', 10),
-    ('Verdant Star', '', 340, 'Hand Chains', 10),
-    ('Vertical Gleam', '', 340, 'Hand Chains', 10),
-    ('White Aura', '', 340, 'Hand Chains', 10),
-    ('Marly', '', 490, 'Back Chains', 10),
-    ('Pearly', '', 490, 'Back Chains', 10),
-    ('The OG', '', 680, 'Back Chains', 10),
-    ('Vertical Gleam', '', 680, 'Back Chains', 10),
-    ('Bling Drop', '', 310, 'Necklaces', 10),
-    ('Blue Aura Drop', '', 310, 'Necklaces', 10),
-    ('Blue Pearl', '', 370, 'Necklaces', 10),
-    ('Double The Aura Drop', '', 350, 'Necklaces', 10),
-    ('Double The Bling Drop', '', 400, 'Necklaces', 10),
-    ('Emerald Seas Drop (in dark green)', '', 450, 'Necklaces', 10),
-    ('Emerald Seas Drop (in light green)', '', 450, 'Necklaces', 10),
-    ('Figaro', '', 290, 'Necklaces', 10),
-    ('Green Aura Drop', '', 310, 'Necklaces', 10),
-    ('Green Pearl', '', 370, 'Necklaces', 10),
-    ('Lock and Key', '', 320, 'Necklaces', 10),
-    ('Marly Drop', '', 450, 'Necklaces', 10),
-    ('Ocean Pearl Drop', '', 450, 'Necklaces', 10),
-    ('Paper Clip (in gold)', '', 290, 'Necklaces', 10),
-    ('Paper Clip (in silver)', '', 290, 'Necklaces', 10),
-    ('Rainbow', '', 290, 'Necklaces', 10),
-    ('Red Aura Drop', '', 310, 'Necklaces', 10),
-    ('Rhinestones Drop', '', 310, 'Necklaces', 10),
-    ('Scarlet', '', 290, 'Necklaces', 10),
-    ('Scarlet Drop', '', 320, 'Necklaces', 10),
-    ('Seashell', '', 390, 'Necklaces', 10),
-    ('Seashore', '', 400, 'Necklaces', 10),
-    ('The Golden Ovoid', '', 290, 'Necklaces', 10),
-    ('The OG Drop (in gold)', '', 290, 'Necklaces', 10),
-    ('The OG Drop (in silver)', '', 290, 'Necklaces', 10),
-    ('Tiffany (in gold)', '', 320, 'Necklaces', 10),
-    ('Tiffany (in silver)', '', 320, 'Necklaces', 10),
-    ('Twisted', '', 290, 'Necklaces', 10),
-    ('Vertical Gleam Drop', '', 290, 'Necklaces', 10),
-    ('White Aura Drop', '', 310, 'Necklaces', 10),
-    ('Seashell', '', 650, 'Sets', 10),
-    ('Seashore', '', 800, 'Sets', 10),
-    ('Twisted', '', 800, 'Sets', 10),
-    ('Bling', '', 490, 'Waist Chains', 10),
-    ('Emerald', '', 490, 'Waist Chains', 10),
-    ('Golden Ovoid', '', 490, 'Waist Chains', 10),
-    ('Ocean Pearl', '', 490, 'Waist Chains', 10),
-    ('Pearly Hoops', '', 490, 'Waist Chains', 10),
-    ('The OG', '', 490, 'Waist Chains', 10),
-    ('The OG (double layered)', '', 490, 'Waist Chains', 10),
-    ('Twisted', '', 490, 'Waist Chains', 10),
-    ('Vertical Gleam', '', 490, 'Waist Chains', 10),
-    ('The OG', '', 680, 'Body Chains', 10),
-    ('Emerald', '', 680, 'Body Chains', 10),
-    ('Vertical Gleam', '', 680, 'Body Chains', 10)
-
-
-  `;
-
   try {
-    await sequelize.query(resetQueries);
-    res.status(200).json({ message: "Database reset successfully." });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error resetting database.", error });
+    const collections = [
+      "users",
+      "promo_codes",
+      "products",
+      "product_variants",
+      "product_images",
+      "carts",
+      "cart_items",
+      "orders",
+      "order_items",
+    ];
+
+    // Step 1: Drop all collections if they exist
+    for (const name of collections) {
+      const exists = await mongoose.connection.db
+        .listCollections({ name })
+        .hasNext();
+      if (exists) {
+        await mongoose.connection.db.dropCollection(name);
+        console.log(`✅ Dropped collection: ${name}`);
+      }
+    }
+
+   const seedProducts = [
+  { name: 'Bling', price: 220, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Blue Pearl', price: 250, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Emerald', price: 250, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Emerald Seas (in dark green)', price: 250, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Emerald Seas (in light green)', price: 250, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Figaro', price: 220, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Green Pearl', price: 250, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Large Cuff', price: 390, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Lock and Key', price: 230, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Maris Pearl', price: 250, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Paper Clip', price: 210, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Purple Stones', price: 250, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Rainbow', price: 220, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Rod', price: 220, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Scarlet', price: 230, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Seashell', price: 290, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Small Cuff', price: 350, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Tiffany', price: 230, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Twisted', price: 210, type: 'Bracelets', stock_quantity: 100 },
+  { name: 'Bloom', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Blue Drip', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Blue Starfish', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Constellations', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Coral', price: 490, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Engraved Eternal', price: 250, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Eternal', price: 220, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Green Hues', price: 290, type: 'Earrings', stock_quantity: 100 },
+  { name: 'La Perle', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Mini Seashell', price: 210, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Paper Clip', price: 290, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Pearl Nest', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Pearl Petal', price: 290, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Pearly Eternal', price: 290, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Pearly Starfish', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Pink Hues', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Seashell', price: 250, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Seashore', price: 450, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Sparkly Starfish', price: 290, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Starfish', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Starlight (in blue)', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Starlight (in green)', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Starlight (in white)', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Starry Night', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Tiffany', price: 300, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Triple Pearl', price: 350, type: 'Earrings', stock_quantity: 100 },
+  { name: 'Bling', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Blue Aura', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Bold', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Emerald', price: 400, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Gemstone', price: 450, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Green Aura', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Marly', price: 400, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Mix and Match', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Ocean Pearl', price: 400, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Pearly', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Plain V (in gold)', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Plain V (in silver)', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Red Aura', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Rod', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Scarlet', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'The Golden Ovoid', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'The OG (in gold)', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'The OG (in silver)', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Verdant Star', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Vertical Gleam', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'White Aura', price: 340, type: 'Hand Chains', stock_quantity: 100 },
+  { name: 'Marly', price: 490, type: 'Back Chains', stock_quantity: 100 },
+  { name: 'Pearly', price: 490, type: 'Back Chains', stock_quantity: 100 },
+  { name: 'The OG', price: 680, type: 'Back Chains', stock_quantity: 100 },
+  { name: 'Vertical Gleam', price: 680, type: 'Back Chains', stock_quantity: 100 },
+  { name: 'Bling Drop', price: 310, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Blue Aura Drop', price: 310, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Blue Pearl', price: 370, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Double The Aura Drop', price: 350, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Double The Bling Drop', price: 400, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Emerald Seas Drop (in dark green)', price: 450, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Emerald Seas Drop (in light green)', price: 450, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Figaro', price: 290, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Green Aura Drop', price: 310, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Green Pearl', price: 370, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Lock and Key', price: 320, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Marly Drop', price: 450, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Ocean Pearl Drop', price: 450, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Paper Clip (in gold)', price: 290, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Paper Clip (in silver)', price: 290, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Rainbow', price: 290, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Red Aura Drop', price: 310, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Rhinestones Drop', price: 310, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Scarlet', price: 290, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Scarlet Drop', price: 320, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Seashell', price: 390, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Seashore', price: 400, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'The Golden Ovoid', price: 290, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'The OG Drop (in gold)', price: 290, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'The OG Drop (in silver)', price: 290, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Tiffany (in gold)', price: 320, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Tiffany (in silver)', price: 320, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Twisted', price: 290, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Vertical Gleam Drop', price: 290, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'White Aura Drop', price: 310, type: 'Necklaces', stock_quantity: 100 },
+  { name: 'Seashell', price: 650, type: 'Sets', stock_quantity: 100 },
+  { name: 'Seashore', price: 800, type: 'Sets', stock_quantity: 100 },
+  { name: 'Twisted', price: 800, type: 'Sets', stock_quantity: 100 },
+  { name: 'Bling', price: 490, type: 'Waist Chains', stock_quantity: 100 },
+  { name: 'Emerald', price: 490, type: 'Waist Chains', stock_quantity: 100 },
+  { name: 'Golden Ovoid', price: 490, type: 'Waist Chains', stock_quantity: 100 },
+  { name: 'Ocean Pearl', price: 490, type: 'Waist Chains', stock_quantity: 100 },
+  { name: 'Pearly Hoops', price: 490, type: 'Waist Chains', stock_quantity: 100 },
+  { name: 'The OG', price: 490, type: 'Waist Chains', stock_quantity: 100 },
+  { name: 'The OG (double layered)', price: 490, type: 'Waist Chains', stock_quantity: 100 },
+  { name: 'Twisted', price: 490, type: 'Waist Chains', stock_quantity: 100 },
+  { name: 'Vertical Gleam', price: 490, type: 'Waist Chains', stock_quantity: 100 },
+  { name: 'The OG', price: 680, type: 'Body Chains', stock_quantity: 100 },
+  { name: 'Emerald', price: 680, type: 'Body Chains', stock_quantity: 100 },
+  { name: 'Vertical Gleam', price: 680, type: 'Body Chains', stock_quantity: 100 }
+];
+
+
+    await Product.insertMany(seedProducts);
+    console.log("✅ Seeded products");
+// Define variant seeds for the two products
+    const variantSeeds = [
+      {
+        product_name: "Paper Clip",
+        product_type: "Bracelets",
+        variants: [
+          { size: "Small", price: 210.0, stock_quantity: 100 },
+          { size: "Medium", price: 220.0, stock_quantity: 100 },
+          { size: "Large", price: 230.0, stock_quantity: 100 }
+        ]
+      },
+      {
+        product_name: "Paper Clip (in gold)",
+        product_type: "Necklaces",
+        variants: [
+          { size: "Small", price: 290.0, stock_quantity: 100 },
+          { size: "Medium", price: 300.0, stock_quantity: 100 },
+          { size: "Large", price: 310.0, stock_quantity: 100 }
+        ]
+      }
+    ];
+
+    for (const seed of variantSeeds) {
+  const product = await Product.findOne({
+    name: seed.product_name,
+    type: seed.product_type,
+  });
+
+  if (!product) {
+    console.warn(`⚠️ Product not found: ${seed.product_name} (${seed.product_type})`);
+    continue;
+  }
+
+  // Insert each variant and collect their IDs
+  const variantDocs = await ProductVariant.insertMany(
+    seed.variants.map(variant => ({
+      product_id: product._id,
+      size: variant.size,
+      price: variant.price,
+      stock_quantity: variant.stock_quantity
+    }))
+  );
+
+  // Push inserted variant IDs to the product's product_variants array
+  const variantIds = variantDocs.map(variant => variant._id);
+  await Product.findByIdAndUpdate(product._id, {
+    $push: { product_variants: { $each: variantIds } }
+  });
+      console.log(`✅ Inserted variants for ${seed.product_name}`);
+    }
+
+    return res.status(200).json({ message: "Database reset successfully" });
+  } catch (err) {
+    console.error("❌ Error resetting database:", err);
+    return res.status(500).json({ message: "Error resetting database", error: err.message });
   }
 };
+
+// export const resetDatabase = async (req, res) => {
+//   const resetQueries = `
+//     -- Drop tables in the correct order
+//     DROP TABLE IF EXISTS order_items;
+//     DROP TABLE IF EXISTS orders;
+//     DROP TABLE IF EXISTS cart_items;
+//     DROP TABLE IF EXISTS carts;
+//     DROP TABLE IF EXISTS product_variants;
+//     DROP TABLE IF EXISTS product_images;
+//     DROP TABLE IF EXISTS products;
+//     DROP TABLE IF EXISTS promo_codes;
+//     DROP TABLE IF EXISTS users;
+
+//     -- USERS
+//     CREATE TABLE users (
+//       user_id INT NOT NULL AUTO_INCREMENT,
+//       email VARCHAR(255) NOT NULL UNIQUE,
+//       first_name VARCHAR(255) NULL,
+//       last_name VARCHAR(255) NULL,
+//       birthday DATE NULL,
+//       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+//       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+//       PRIMARY KEY (user_id)
+//     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+//     -- PROMO CODES
+//     CREATE TABLE promo_codes (
+//       promo_code_id INT NOT NULL AUTO_INCREMENT,
+//       user_id INT NOT NULL,
+//       promo_code VARCHAR(50) NOT NULL UNIQUE,
+//       expiry_date DATE NOT NULL,
+//       discount INT NOT NULL DEFAULT 0,
+//       PRIMARY KEY (promo_code_id),
+//       FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+//     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+//     -- PRODUCTS
+//     CREATE TABLE products (
+//       product_id INT NOT NULL AUTO_INCREMENT,
+//       name VARCHAR(255) NOT NULL,
+//       description TEXT,
+//       price DECIMAL(10, 2) NULL,
+//       type ENUM('Earrings', 'Necklaces', 'Bracelets', 'Hand Chains', 'Back Chains', 'Body Chains', 'Waist Chains', 'Sets') NOT NULL,
+//       stock_quantity INT NOT NULL DEFAULT 0,
+//       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+//       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+//       PRIMARY KEY (product_id)
+//     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+//     CREATE TABLE product_variants (
+//       variant_id INT NOT NULL AUTO_INCREMENT,
+//       product_id INT NOT NULL,
+//       size VARCHAR(50) NOT NULL,
+//       price DECIMAL(10, 2) NOT NULL,
+//       stock_quantity INT NOT NULL DEFAULT 0,
+//       PRIMARY KEY (variant_id),
+//       FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
+//       UNIQUE (product_id, size)  -- to prevent duplicate sizes for the same product
+//     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+//     -- PRODUCT IMAGES
+//     CREATE TABLE product_images (
+//       image_id INT NOT NULL AUTO_INCREMENT,
+//       product_id INT NOT NULL,
+//       image_url TEXT NOT NULL,
+//       is_primary BOOLEAN DEFAULT FALSE,
+//       PRIMARY KEY (image_id),
+//       FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
+//     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+//     -- CARTS
+//     CREATE TABLE carts (
+//       cart_id INT NOT NULL AUTO_INCREMENT,
+//       user_id INT NOT NULL,
+//       total_price DECIMAL(10, 2) DEFAULT 0.00,
+//       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+//       PRIMARY KEY (cart_id),
+//       FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+//     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+//     -- CART ITEMS
+//     CREATE TABLE cart_items (
+//       cart_item_id INT NOT NULL AUTO_INCREMENT,
+//       cart_id INT NOT NULL,
+//       size VARCHAR(10) NULL, 
+//       variant_id INT NULL,
+//       product_id INT NULL,
+//       quantity INT NOT NULL DEFAULT 1,
+//       PRIMARY KEY (cart_item_id),
+//       FOREIGN KEY (cart_id) REFERENCES carts(cart_id) ON DELETE CASCADE,
+//       FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id) ON DELETE CASCADE,
+//       FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
+//     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+
+//     -- ORDERS
+//     CREATE TABLE orders (
+//       order_id INT NOT NULL AUTO_INCREMENT,
+//       user_id INT NOT NULL,
+//       order_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+//       subtotal DECIMAL(10, 2) NOT NULL,            -- Total before discount
+//       discount_percent INT DEFAULT 0,             -- Discount applied (e.g., 15 for 15%)
+//       total_amount DECIMAL(10, 2) NOT NULL,        -- Total after discount
+//       shipping_cost DECIMAL(10, 2) DEFAULT 0.00,
+//       address VARCHAR(255) NOT NULL,
+//       apartment_no VARCHAR(50) NOT NULL,
+//       city VARCHAR(100) NOT NULL,
+//       governorate ENUM('Giza', 'Cairo', 'Alexandria', '6th Of October') NOT NULL,
+//       phone_number VARCHAR(20) NOT NULL,
+//       status ENUM('Pending', 'Shipped', 'Delivered', 'Cancelled') DEFAULT 'Pending',
+//       PRIMARY KEY (order_id),
+//       FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+//     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+//     -- ORDER ITEMS
+//     CREATE TABLE order_items (
+//       order_item_id INT NOT NULL AUTO_INCREMENT,
+//       order_id INT NOT NULL,
+//       product_id INT NOT NULL,
+//       size VARCHAR(10) NULL, -- ✅ size field added
+//       variant_id INT NULL,
+//       quantity INT NOT NULL,
+//       price DECIMAL(10, 2) NOT NULL,
+//       PRIMARY KEY (order_item_id),
+//       FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
+//       FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
+//       FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id) ON DELETE CASCADE
+//     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+//     -- INSERT PRODUCTS (simplified here with correct SQL structure)
+//     INSERT INTO products (name, description, price, type, stock_quantity) VALUES
+//     ('Bling', '', 220, 'Bracelets', 10),
+//     ('Blue Pearl', '', 250, 'Bracelets', 10),
+//     ('Emerald', '', 250, 'Bracelets', 10),
+//     ('Emerald Seas (in dark green)', '', 250, 'Bracelets', 10),
+//     ('Emerald Seas (in light green)', '', 250, 'Bracelets', 10),
+//     ('Figaro', '', 220, 'Bracelets', 10),
+//     ('Green Pearl', '', 250, 'Bracelets', 10),
+//     ('Large Cuff', '', 390, 'Bracelets', 10),
+//     ('Lock and Key', '', 230, 'Bracelets', 10),
+//     ('Maris Pearl', '', 250, 'Bracelets', 10),
+//     ('Paper Clip', '', 210, 'Bracelets', 10),
+//     ('Purple Stones', '', 250, 'Bracelets', 10),
+//     ('Rainbow', '', 220, 'Bracelets', 10),
+//     ('Rod', '', 220, 'Bracelets', 10),
+//     ('Scarlet', '', 230, 'Bracelets', 10),
+//     ('Seashell', '', 290, 'Bracelets', 10),
+//     ('Small Cuff', '', 350, 'Bracelets', 10),
+//     ('Tiffany', '', 230, 'Bracelets', 10),
+//     ('Twisted', '', 210, 'Bracelets', 10),
+//     ('Bloom', '', 350, 'Earrings', 10),
+//     ('Blue Drip', '', 350, 'Earrings', 10),
+//     ('Blue Starfish', '', 350, 'Earrings', 10),
+//     ('Constellations', '', 350, 'Earrings', 10),
+//     ('Coral', '', 490, 'Earrings', 10),
+//     ('Engraved Eternal', '', 250, 'Earrings', 10),
+//     ('Eternal', '', 220, 'Earrings', 10),
+//     ('Green Hues', '', 290, 'Earrings', 10),
+//     ('La Perle', '', 350, 'Earrings', 10),
+//     ('Mini Seashell', '', 210, 'Earrings', 10),
+//     ('Paper Clip', '', 290, 'Earrings', 10),
+//     ('Pearl Nest', '', 350, 'Earrings', 10),
+//     ('Pearl Petal', '', 290, 'Earrings', 10),
+//     ('Pearly Eternal', '', 290, 'Earrings', 10),
+//     ('Pearly Starfish', '', 350, 'Earrings', 10),
+//     ('Pink Hues', '', 350, 'Earrings', 10),
+//     ('Seashell', '', 250, 'Earrings', 10),
+//     ('Seashore', '', 450, 'Earrings', 10),
+//     ('Sparkly Starfish', '', 290, 'Earrings', 10),
+//     ('Starfish', '', 350, 'Earrings', 10),
+//     ('Starlight (in blue)', '', 350, 'Earrings', 10),
+//     ('Starlight (in green)', '', 350, 'Earrings', 10),
+//     ('Starlight (in white)', '', 350, 'Earrings', 10),
+//     ('Starry Night', '', 350, 'Earrings', 10),
+//     ('Tiffany', '', 300, 'Earrings', 10),
+//     ('Triple Pearl', '', 350, 'Earrings', 10),
+//     ('Bling', '', 340, 'Hand Chains', 10),
+//     ('Blue Aura', '', 340, 'Hand Chains', 10),
+//     ('Bold', '', 340, 'Hand Chains', 10),
+//     ('Emerald', '', 400, 'Hand Chains', 10),
+//     ('Gemstone', '', 450, 'Hand Chains', 10),
+//     ('Green Aura', '', 340, 'Hand Chains', 10),
+//     ('Marly', '', 400, 'Hand Chains', 10),
+//     ('Mix and Match', '', 340, 'Hand Chains', 10),
+//     ('Ocean Pearl', '', 400, 'Hand Chains', 10),
+//     ('Pearly', '', 340, 'Hand Chains', 10),
+//     ('Plain V (in gold)', '', 340, 'Hand Chains', 10),
+//     ('Plain V (in silver)', '', 340, 'Hand Chains', 10),
+//     ('Red Aura', '', 340, 'Hand Chains', 10),
+//     ('Rod', '', 340, 'Hand Chains', 10),
+//     ('Scarlet', '', 340, 'Hand Chains', 10),
+//     ('The Golden Ovoid', '', 340, 'Hand Chains', 10),
+//     ('The OG (in gold)', '', 340, 'Hand Chains', 10),
+//     ('The OG (in silver)', '', 340, 'Hand Chains', 10),
+//     ('Verdant Star', '', 340, 'Hand Chains', 10),
+//     ('Vertical Gleam', '', 340, 'Hand Chains', 10),
+//     ('White Aura', '', 340, 'Hand Chains', 10),
+//     ('Marly', '', 490, 'Back Chains', 10),
+//     ('Pearly', '', 490, 'Back Chains', 10),
+//     ('The OG', '', 680, 'Back Chains', 10),
+//     ('Vertical Gleam', '', 680, 'Back Chains', 10),
+//     ('Bling Drop', '', 310, 'Necklaces', 10),
+//     ('Blue Aura Drop', '', 310, 'Necklaces', 10),
+//     ('Blue Pearl', '', 370, 'Necklaces', 10),
+//     ('Double The Aura Drop', '', 350, 'Necklaces', 10),
+//     ('Double The Bling Drop', '', 400, 'Necklaces', 10),
+//     ('Emerald Seas Drop (in dark green)', '', 450, 'Necklaces', 10),
+//     ('Emerald Seas Drop (in light green)', '', 450, 'Necklaces', 10),
+//     ('Figaro', '', 290, 'Necklaces', 10),
+//     ('Green Aura Drop', '', 310, 'Necklaces', 10),
+//     ('Green Pearl', '', 370, 'Necklaces', 10),
+//     ('Lock and Key', '', 320, 'Necklaces', 10),
+//     ('Marly Drop', '', 450, 'Necklaces', 10),
+//     ('Ocean Pearl Drop', '', 450, 'Necklaces', 10),
+//     ('Paper Clip (in gold)', '', 290, 'Necklaces', 10),
+//     ('Paper Clip (in silver)', '', 290, 'Necklaces', 10),
+//     ('Rainbow', '', 290, 'Necklaces', 10),
+//     ('Red Aura Drop', '', 310, 'Necklaces', 10),
+//     ('Rhinestones Drop', '', 310, 'Necklaces', 10),
+//     ('Scarlet', '', 290, 'Necklaces', 10),
+//     ('Scarlet Drop', '', 320, 'Necklaces', 10),
+//     ('Seashell', '', 390, 'Necklaces', 10),
+//     ('Seashore', '', 400, 'Necklaces', 10),
+//     ('The Golden Ovoid', '', 290, 'Necklaces', 10),
+//     ('The OG Drop (in gold)', '', 290, 'Necklaces', 10),
+//     ('The OG Drop (in silver)', '', 290, 'Necklaces', 10),
+//     ('Tiffany (in gold)', '', 320, 'Necklaces', 10),
+//     ('Tiffany (in silver)', '', 320, 'Necklaces', 10),
+//     ('Twisted', '', 290, 'Necklaces', 10),
+//     ('Vertical Gleam Drop', '', 290, 'Necklaces', 10),
+//     ('White Aura Drop', '', 310, 'Necklaces', 10),
+//     ('Seashell', '', 650, 'Sets', 10),
+//     ('Seashore', '', 800, 'Sets', 10),
+//     ('Twisted', '', 800, 'Sets', 10),
+//     ('Bling', '', 490, 'Waist Chains', 10),
+//     ('Emerald', '', 490, 'Waist Chains', 10),
+//     ('Golden Ovoid', '', 490, 'Waist Chains', 10),
+//     ('Ocean Pearl', '', 490, 'Waist Chains', 10),
+//     ('Pearly Hoops', '', 490, 'Waist Chains', 10),
+//     ('The OG', '', 490, 'Waist Chains', 10),
+//     ('The OG (double layered)', '', 490, 'Waist Chains', 10),
+//     ('Twisted', '', 490, 'Waist Chains', 10),
+//     ('Vertical Gleam', '', 490, 'Waist Chains', 10),
+//     ('The OG', '', 680, 'Body Chains', 10),
+//     ('Emerald', '', 680, 'Body Chains', 10),
+//     ('Vertical Gleam', '', 680, 'Body Chains', 10)
+
+
+//   `;
+
+//   try {
+//     await sequelize.query(resetQueries);
+//     res.status(200).json({ message: "Database reset successfully." });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ message: "Error resetting database.", error });
+//   }
+// };
 
 
 cron.schedule("26 2 * * *", async () => {
@@ -363,6 +576,8 @@ export const login = async (req, res) => {
 
     verificationStore.set(email, { code: verificationCode, createdAt });
 
+    console.log(email, verificationCode, createdAt);
+    
     await sendVerificationCodeEmail(email, verificationCode);
 
 
@@ -420,7 +635,11 @@ export const verifyCodeAndLogin = async (req, res) => {
     verificationStore.delete(email);
 
     // Check if user already exists
-    let user = await User.findOne({ where: { email } });
+    let user = await User.findOne({ email });
+    
+    console.log(user);
+    
+
 
     if (user) {
       const token = generateToken(user);
@@ -428,7 +647,7 @@ export const verifyCodeAndLogin = async (req, res) => {
         message: 'Login successful!',
         token,
         user: {
-          user_id: user.user_id,
+          user_id: user._id,
           email: user.email,
           first_name: user.first_name,
           last_name: user.last_name,
@@ -445,7 +664,7 @@ export const verifyCodeAndLogin = async (req, res) => {
       message: 'User created successfully!',
       token,
       user: {
-        user_id: newUser.user_id,
+        user_id: newUser._id,
         email: newUser.email,
       },
     });

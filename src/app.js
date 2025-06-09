@@ -7,6 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import sequelize from "./config/database.js";
 import { authenticateJWT } from "./middlewares/auth.middleware.js"; 
+import { connectToMongoDB } from "./config/mongodb.js";
+
 
 
 
@@ -20,26 +22,28 @@ class App {
     this.__dirname = path.dirname(fileURLToPath(import.meta.url));
   }
 
+  
   // Connect to MySQL using Sequelize
   async connectToDatabase() {
+    await connectToMongoDB();
     if (this.env === "development") {
       this.app.use(morgan("dev"));
     }
 
-    // ✅ Load models & associations BEFORE syncing
-  import('./models/product.js');
-  import('./models/productImage.js');
-  import('./models/associations.js');
+  //   // ✅ Load models & associations BEFORE syncing
+  // import('./models/product.js');
+  // import('./models/productImage.js');
+  // import('./models/associations.js');
 
 
-    try {
-      await sequelize.authenticate();
-      console.log("✅ MySQL connected successfully!");
-      await sequelize.sync();
-      console.log("📦 Models synced successfully.");
-    } catch (err) {
-      console.error("❌ MySQL connection error:", err);
-    }
+    // try {
+    //   await sequelize.authenticate();
+    //   console.log("✅ MySQL connected successfully!");
+    //   await sequelize.sync();
+    //   console.log("📦 Models synced successfully.");
+    // } catch (err) {
+    //   console.error("❌ MySQL connection error:", err);
+    // }
   }
 
   // Middleware setup

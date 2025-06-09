@@ -1,38 +1,35 @@
-import { DataTypes } from "sequelize";
-import sequelize from "../config/database.js";
-import User from "./user.js";
+// models/PromoCode.js
 
-const PromoCode = sequelize.define("PromoCode", {
-  promo_code_id: {
-    type: DataTypes.INTEGER,
-    autoIncrement: true,
-    primaryKey: true,
-  },
-  user_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-  },
-  promo_code: {
-    type: DataTypes.STRING(50),
-    allowNull: false,
-    unique: true,
-  },
-  expiry_date: {
-    type: DataTypes.DATEONLY,
-    allowNull: false,
-  },
-  discount: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    defaultValue: 0,
-  },
-}, {
-  tableName: "promo_codes",
-  timestamps: false,
-});
+import mongoose from "mongoose";
 
-// Associations
-PromoCode.belongsTo(User, { foreignKey: "user_id" });
-User.hasMany(PromoCode, { foreignKey: "user_id" });
+const promoCodeSchema = new mongoose.Schema(
+  {
+    user_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    promo_code: {
+      type: String,
+      required: true,
+      unique: true,
+      maxlength: 50,
+    },
+    expiry_date: {
+      type: Date,
+      required: true,
+    },
+    discount: {
+      type: Number,
+      default: 0,
+    },
+  },
+  {
+    collection: "promo_codes",
+    timestamps: false,
+  }
+);
+
+const PromoCode = mongoose.model("PromoCode", promoCodeSchema);
 
 export default PromoCode;

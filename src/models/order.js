@@ -1,72 +1,66 @@
-import { DataTypes } from 'sequelize';
-import sequelize from "../config/database.js";
-import User from './user.js';
+// models/Order.js
 
-const Order = sequelize.define('Order', {
-  order_id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true,
-  },
-  user_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: User,
-      key: 'user_id',
+import mongoose from "mongoose";
+
+const orderSchema = new mongoose.Schema(
+  {
+    user_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
     },
-    onDelete: 'CASCADE',
+    order_date: {
+      type: Date,
+      default: Date.now,
+    },
+    subtotal: {
+      type: mongoose.Types.Decimal128,
+      required: true,
+    },
+    discount_percent: {
+      type: Number,
+      default: 0,
+    },
+    total_amount: {
+      type: mongoose.Types.Decimal128,
+      required: true,
+    },
+    shipping_cost: {
+      type: mongoose.Types.Decimal128,
+      default: 0.0,
+    },
+    address: {
+      type: String,
+      required: true,
+    },
+    apartment_no: {
+      type: String,
+      required: true,
+    },
+    city: {
+      type: String,
+      required: true,
+    },
+    governorate: {
+      type: String,
+      required: true,
+    },
+    phone_number: {
+      type: String,
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["Pending", "Shipped", "Delivered", "Cancelled"],
+      default: "Pending",
+    },
   },
-  order_date: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW,
-  },
-  subtotal: {
-    type: DataTypes.DECIMAL(10, 2),
-    allowNull: false,
-  },
-  discount_percent: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0,
-  },
-  total_amount: {
-    type: DataTypes.DECIMAL(10, 2),
-    allowNull: false,
-  },
-    shipping_cost: { // ✅ Added
-    type: DataTypes.DECIMAL(10, 2),
-    defaultValue: 0.00,
-  },
-  address: {
-    type: DataTypes.STRING(255),
-    allowNull: false,
-  },
-  apartment_no: {
-    type: DataTypes.STRING(50),
-    allowNull: false,
-  },
-  city: {
-    type: DataTypes.STRING(100),
-    allowNull: false,
-  },
-  governorate: {
-     type: DataTypes.STRING(100),
-    allowNull: false,
-  },
-  phone_number: {
-    type: DataTypes.STRING(20),
-    allowNull: false,
-  },
-  status: {
-    type: DataTypes.ENUM('Pending', 'Shipped', 'Delivered', 'Cancelled'),
-    defaultValue: 'Pending',
-  },
-}, {
-  tableName: 'orders',
-  timestamps: false,
-});
+  {
+    collection: "orders",
+    timestamps: false,
+  }
+);
 
-Order.belongsTo(User, { foreignKey: 'user_id', onDelete: 'CASCADE' });
-User.hasMany(Order, { foreignKey: 'user_id', onDelete: 'CASCADE' });
+const Order = mongoose.model("Order", orderSchema);
 
 export default Order;

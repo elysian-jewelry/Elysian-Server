@@ -1,41 +1,37 @@
-import { DataTypes } from "sequelize";
-import sequelize from "../config/database.js";
-import Product from "./product.js";
+// models/ProductVariant.js
 
-const ProductVariant = sequelize.define("ProductVariant", {
-  variant_id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true,
-  },
-  product_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: "products",
-      key: "product_id",
+import mongoose from "mongoose";
+
+const productVariantSchema = new mongoose.Schema(
+  {
+    product_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: true,
     },
-    onDelete: "CASCADE",
+    size: {
+      type: String,
+      required: true,
+      maxlength: 50,
+    },
+    price: {
+      type: Number,
+      required: true,
+    },
+    stock_quantity: {
+      type: Number,
+      default: 0,
+    },
   },
-  size: {
-    type: DataTypes.STRING(50),
-    allowNull: false,
-  },
-  price: {
-    type: DataTypes.DECIMAL(10, 2),
-    allowNull: false,
-  },
-  stock_quantity: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0,
-  },
-}, {
-  tableName: "product_variants",
-  timestamps: false,
-});
+  {
+    collection: "product_variants",
+    timestamps: false,
+  }
+);
 
-// Associations
-ProductVariant.belongsTo(Product, { foreignKey: "product_id", onDelete: "CASCADE" });
-Product.hasMany(ProductVariant, { foreignKey: "product_id", onDelete: "CASCADE" });
+// Ensure no duplicate size for same product (similar to UNIQUE constraint)
+productVariantSchema.index({ product: 1, size: 1 }, { unique: true });
+
+const ProductVariant = mongoose.model("ProductVariant", productVariantSchema);
 
 export default ProductVariant;

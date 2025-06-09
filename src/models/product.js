@@ -1,60 +1,57 @@
-import { DataTypes } from "sequelize";
-import sequelize from "../config/database.js";
-import ProductImage from "./productImage.js"; // Ensure this is at the top
+// models/Product.js
 
-const Product = sequelize.define("Product", {
-  product_id: {
-    type: DataTypes.INTEGER,
-    autoIncrement: true,
-    primaryKey: true,
+import mongoose from "mongoose";
+
+const productSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      maxlength: 255,
+    },
+    description: {
+      type: String,
+    },
+    price: {
+      type: Number,
+    },
+    type: {
+      type: String,
+      required: true,
+      enum: [
+        "Earrings",
+        "Necklaces",
+        "Bracelets",
+        "Hand Chains",
+        "Back Chains",
+        "Body Chains",
+        "Waist Chains",
+        "Sets"
+      ],
+    },
+    stock_quantity: {
+      type: Number,
+      default: 0,
+    },
+    images: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "ProductImage",
+      }
+    ],
+    product_variants: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "ProductVariant",
+      }
+    ],
   },
-  name: {
-    type: DataTypes.STRING(255),
-    allowNull: false,
-  },
-  description: {
-    type: DataTypes.TEXT,
-    allowNull: true,
-  },
-  price: {
-    type: DataTypes.DECIMAL(10, 2),
-    allowNull: true,
-  },
-  type: {
-    type: DataTypes.ENUM(
-      "Earrings",
-      "Necklaces",
-      "Bracelets",
-      "Hand Chains",
-      "Back Chains",
-      "Body Chains",
-      "Waist Chains",
-      "Sets"
-    ),
-    allowNull: false,
-  },
-  stock_quantity: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    defaultValue: 0,
-  },
-  created_at: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW,
-    allowNull: false,
-    field: 'created_at',
-  },
-  updated_at: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW,
-    allowNull: false,
-    field: 'updated_at',
+  {
+    collection: "products",
+    timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
   }
-}, {
-  tableName: "products",
-  timestamps: true,
-  createdAt: 'created_at',
-  updatedAt: 'updated_at',
-});
+);
+
+const Product = mongoose.model("Product", productSchema);
 
 export default Product;

@@ -1,33 +1,27 @@
-import { DataTypes } from 'sequelize';
-import sequelize from '../config/database.js';
-import Product from './product.js';
+// models/ProductImage.js
+import mongoose from "mongoose";
 
-const ProductImage = sequelize.define('ProductImage', {
-  image_id: {
-    type: DataTypes.INTEGER,
-    autoIncrement: true,
-    primaryKey: true,
-  },
-  product_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: 'products',
-      key: 'product_id',
+const productImageSchema = new mongoose.Schema(
+  {
+    product_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: true,
     },
-    onDelete: 'CASCADE',
+    image_url: {
+      type: String,
+      required: true,
+    },
+    is_primary: {
+      type: Boolean,
+      default: false,
+    },
   },
-  image_url: {
-    type: DataTypes.TEXT,
-    allowNull: false,
-  },
-  is_primary: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false,
+  {
+    collection: "product_images",
+    timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
   }
-}, {
-  tableName: 'product_images',
-  timestamps: false,
-});
+);
 
+const ProductImage = mongoose.model("ProductImage", productImageSchema);
 export default ProductImage;
