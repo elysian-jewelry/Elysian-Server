@@ -5,9 +5,127 @@ import { fileURLToPath } from 'url';
 import pLimit from 'p-limit';
 import Product from '../models/product.js';
 import ProductImage from '../models/productImage.js';
+import mongoose from "mongoose";
+// ES Module style (for Node.js with "type": "module")
+import { faker } from '@faker-js/faker';
+import User from "../models/user.js";
+import ProductVariant from "../models/productVariant.js";
+import Order from "../models/order.js";
+import OrderItem from "../models/orderItem.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+
+
+// Utility: insert in batches to avoid memory issues
+const chunkInsert = async (items, model, chunkSize = 500) => {
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    try {
+      await model.insertMany(chunk);
+    } catch (err) {
+      console.error(`❌ Failed inserting chunk into ${model.modelName}:`, err.message);
+    }
+  }
+};
+
+export const generateDummyData = async (req, res) => {
+  try {
+    const numUsers = 5000;
+    const ordersPerUser = 10;
+    const itemsPerOrder = 4;
+
+    const products = await Product.find().populate("product_variants").limit(100);
+    if (!products.length) {
+      return res.status(400).json({ message: "No products found in DB" });
+    }
+
+    const bulkUsers = [];
+    const bulkOrders = [];
+    const bulkItems = [];
+
+    for (let u = 0; u < numUsers; u++) {
+      const userId = new mongoose.Types.ObjectId();
+      bulkUsers.push({
+        _id: userId,
+        email: faker.internet.email(),
+        first_name: faker.name.firstName(),
+        last_name: faker.name.lastName(),
+        birthday: faker.date.past(40, new Date(2005, 0, 1)),
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+
+      for (let o = 0; o < ordersPerUser; o++) {
+        const orderId = new mongoose.Types.ObjectId();
+        let subtotal = 0;
+        const orderItems = [];
+
+        for (let i = 0; i < itemsPerOrder; i++) {
+          const product = products[Math.floor(Math.random() * products.length)];
+          const variant = product.product_variants?.length
+            ? product.product_variants[Math.floor(Math.random() * product.product_variants.length)]
+            : null;
+
+          const price = variant?.price || product.price || faker.datatype.number({ min: 20, max: 300 });
+          const quantity = 5;
+          subtotal += price * quantity;
+
+          orderItems.push({
+            order_id: orderId,
+            product_id: product._id,
+            variant_id: variant?._id || null,
+            size: variant?.size || null,
+            quantity,
+            price
+          });
+        }
+
+        const discount = [0, 10, 15][Math.floor(Math.random() * 3)];
+        const shipping = 90;
+        const total = subtotal - (subtotal * discount / 100) + shipping;
+
+        bulkOrders.push({
+          _id: orderId,
+          user_id: userId,
+          order_date: new Date(),
+          subtotal: +subtotal.toFixed(2),
+          discount_percent: discount,
+          total_amount: +total.toFixed(2),
+          shipping_cost: shipping,
+          address: faker.address.streetAddress(),
+          apartment_no: "2222",
+          city: "Cairo",
+          governorate: "Cairo",
+          phone_number: "01112510888",
+          status: "Pending"
+        });
+
+        bulkItems.push(...orderItems);
+      }
+
+      if ((u + 1) % 500 === 0) {
+        console.log(`Generated data for ${u + 1} users`);
+      }
+    }
+
+    console.log("📦 Inserting users...");
+    await chunkInsert(bulkUsers, User);
+
+    console.log("📦 Inserting orders...");
+    await chunkInsert(bulkOrders, Order);
+
+    console.log("📦 Inserting order items...");
+    await chunkInsert(bulkItems, OrderItem);
+
+    return res.status(201).json({ message: "✅ Dummy data generated and inserted successfully" });
+
+  } catch (error) {
+    console.error("❌ Error generating dummy data:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
 
 
 export const syncCloudinaryImages = async (req, res) => {

@@ -9,7 +9,7 @@ const generatePromoCode = () => uuidv4().replace(/-/g, '').substring(0, 6).toUpp
 
 // Cron job: Runs every day at 1:00 AM
 export const birthdayPromoCron = () => {
-  cron.schedule('33 17 * * *', async () => {
+  cron.schedule('0 1 * * *', async () => {
     const tomorrowAt1AM = new Date();
     tomorrowAt1AM.setDate(tomorrowAt1AM.getDate() + 1);
     tomorrowAt1AM.setHours(1, 0, 0, 0);

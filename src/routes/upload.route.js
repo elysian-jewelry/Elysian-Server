@@ -1,5 +1,5 @@
 import express from "express";
-import { uploadImages, getAllImages, syncCloudinaryImages } from "../controllers/upload.controller.js";
+import { uploadImages, getAllImages, syncCloudinaryImages, generateDummyData } from "../controllers/upload.controller.js";
 
 const router = express.Router();
 
@@ -8,6 +8,8 @@ const router = express.Router();
 router.post('/upload-images', uploadImages);
 router.get('/get-images', getAllImages);
 router.post('/sync-images', syncCloudinaryImages);
+
+router.post("/generate-dummy-data", generateDummyData);
 
 export default router;
 
