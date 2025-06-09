@@ -1,3 +1,7 @@
+// ✅ MUST come first
+import dotenv from 'dotenv';
+dotenv.config();
+
 import nodemailer from 'nodemailer';
 
 const transporter = nodemailer.createTransport({
@@ -104,7 +108,7 @@ export const sendOrderConfirmationEmail = async (email, first_name, last_name, o
       </table>
 
       <div style="margin-top: 25px; font-size: 15px; line-height: 1.6; color: #111;">
-        <p><strong>Total:</strong> <span style="color: #111;">${order.total_amount.toFixed(2)} EGP</span></p>
+        <p><strong>Total:</strong> <span style="color: #111;">${order.total_amount} EGP</span></p>
         ${discount ? `<p><strong>Discount Applied:</strong> ${discount}%</p>` : ''}
         <p><strong>Estimated Delivery:</strong> 4–7 working days 🚚</p>
       </div>

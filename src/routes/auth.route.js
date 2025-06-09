@@ -3,10 +3,6 @@ import {
   login,
   // signup,
   verifyCodeAndLogin,
-  sendVerificationCode,
-  verifyCode,
-  resetPassword,
-  changePassword,
   resetDatabase,
   getAllUsers
 } from "../controllers/user/auth.controller.js";
@@ -25,10 +21,5 @@ router.post("/auth/login", validate(loginSchema, "body"), login);
 // router.post("/auth/signup", validate(signupSchema, "body"), signup);
 router.post("/auth/verify-code-login", verifyCodeAndLogin);
 
-// Password-related
-router.post("/auth/password/send-code", sendVerificationCode);
-router.post("/auth/password/verify-code", verifyCode);
-router.post("/auth/password/reset", resetPassword);
-router.put("/auth/password/change", validate(changePasswordSchema, "body"), changePassword);
 
 export default router;

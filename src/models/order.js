@@ -14,7 +14,7 @@ const orderSchema = new mongoose.Schema(
       default: Date.now,
     },
     subtotal: {
-      type: mongoose.Types.Decimal128,
+      type: Number,
       required: true,
     },
     discount_percent: {
@@ -22,11 +22,11 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
     total_amount: {
-      type: mongoose.Types.Decimal128,
+      type: Number,
       required: true,
     },
     shipping_cost: {
-      type: mongoose.Types.Decimal128,
+      type: Number,
       default: 0.0,
     },
     address: {
