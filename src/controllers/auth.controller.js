@@ -1,19 +1,19 @@
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
-import User from "../../models/user.js";
-import Product from "../../models/product.js";
-import PromoCode from "../../models/promoCode.js";
-import ProductVariant from "../../models/productVariant.js";
-import ProductImage from "../../models/productImage.js";
-import Cart from "../../models/cart.js";
-import CartItem from "../../models/cartItem.js";
-import Order from "../../models/order.js";
-import OrderItem from "../../models/orderItem.js";
+import User from "../models/user.js";
+import Product from "../models/product.js";
+import PromoCode from "../models/promoCode.js";
+import ProductVariant from "../models/productVariant.js";
+import ProductImage from "../models/productImage.js";
+import Cart from "../models/cart.js";
+import CartItem from "../models/cartItem.js";
+import Order from "../models/order.js";
+import OrderItem from "../models/orderItem.js";
 import { Op } from "sequelize";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
-import { sendVerificationCodeEmail, sendBirthdayPromoCodeEmail  } from "../../middlewares/mailer.middleware.js"; // your custom mail sender
-import sequelize from '../../config/database.js'; // Adjust the path as necessary
+import { sendVerificationCodeEmail, sendBirthdayPromoCodeEmail  } from "../middlewares/mailer.middleware.js"; // your custom mail sender
+import sequelize from '../config/database.js'; // Adjust the path as necessary
 import cron from "node-cron";
 
 // At top of your auth controller file
@@ -251,48 +251,6 @@ export const resetDatabase = async (req, res) => {
   }
 };
 
-
-cron.schedule("26 2 * * *", async () => {
-  try {
-   console.log("🎉 Running birthday promo code cron job...");
-   
-    const today = new Date();
-    const month = today.getMonth() + 1;
-    const day = today.getDate();
-
-    const birthdayUsers = await User.findAll({
-      where: {
-        [Op.and]: [
-          sequelize.where(sequelize.fn("MONTH", sequelize.col("birthday")), month),
-          sequelize.where(sequelize.fn("DAY", sequelize.col("birthday")), day),
-        ]
-      }
-    });
-
-    for (const user of birthdayUsers) {
-      const promo_code = generatePromoCode();
-      // Email the user
-      const discount = 20;
-      const expiryDate = new Date();
-      expiryDate.setDate(today.getDate() + 1);
-
-      // Save promo code to DB
-      await PromoCode.create({
-        user_id: user.user_id,
-        promo_code,
-        expiry_date: expiryDate,
-        discount
-      });
-
-
-      await sendBirthdayPromoCodeEmail(user, promo_code);
-    }
-
-    console.log("🎉 Birthday promo codes sent successfully!");
-  } catch (err) {
-    console.error("❌ Error in birthday cron job:", err);
-  }
-});
 
 export const getAllUsers = async (req, res) => {
   try {

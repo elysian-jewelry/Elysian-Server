@@ -5,7 +5,7 @@ import {
   verifyCodeAndLogin,
   resetDatabase,
   getAllUsers
-} from "../controllers/user/auth.controller.js";
+} from "../controllers/auth.controller.js";
 
 import { validate } from "../middlewares/validation.middleware.js";
 import { signupSchema, loginSchema, changePasswordSchema } from "../validation/users.auth.validation.js";

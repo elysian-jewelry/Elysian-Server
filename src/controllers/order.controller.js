@@ -1,14 +1,15 @@
 import { google } from 'googleapis';
-import Order from "../../models/order.js";
-import OrderItem from "../../models/orderItem.js";
-import Cart from "../../models/cart.js";
-import CartItem from "../../models/cartItem.js";
-import Product from "../../models/product.js";
-import ProductVariant from "../../models/productVariant.js";
-import ProductImage from "../../models/productImage.js";
-import PromoCode from "../../models/promoCode.js";
+import Order from "../models/order.js";
+import OrderItem from "../models/orderItem.js";
+import Cart from "../models/cart.js";
+import CartItem from "../models/cartItem.js";
+import Product from "../models/product.js";
+import ProductVariant from "../models/productVariant.js";
+import ProductImage from "../models/productImage.js";
+import PromoCode from "../models/promoCode.js";
 import { Op } from "sequelize";
-import { sendOrderConfirmationEmail } from '../../middlewares/mailer.middleware.js';
+import { sendOrderConfirmationEmail } from '../middlewares/mailer.middleware.js';
+import mongoose from "mongoose";
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -30,14 +31,16 @@ export const validatePromoCode = async (req, res) => {
       return res.status(400).json({ message: "Promo code is required" });
     }
 
+    const formattedCode = promo_code.trim().toUpperCase();
+    const objectId = new mongoose.Types.ObjectId(user_id);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Compare only the date part
+
+    
     const promo = await PromoCode.findOne({
-      where: {
-        promo_code: promo_code.trim().toUpperCase(),
-        user_id,
-        expiry_date: {
-          [Op.gte]: new Date() // today or in the future
-        }
-      }
+      promo_code: formattedCode,
+      user_id: objectId,
+      expiry_date: { $gte: today } // Not expired
     });
 
     if (!promo) {

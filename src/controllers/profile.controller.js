@@ -1,14 +1,11 @@
-// controllers/user/profile.controller.js
+import User from "../models/user.js";
 
-import User from "../../models/user.js";
-
+// Get user profile
 export const getUserProfile = async (req, res) => {
   try {
-    const userId = req.user.user_id;
+    const user_id = req.user.user_id;
 
-    const user = await User.findByPk(userId, {
-      attributes: { exclude: ["password"] },
-    });
+    const user = await User.findById(user_id).select("-password");
 
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -19,18 +16,19 @@ export const getUserProfile = async (req, res) => {
   }
 };
 
+// Update user profile
 export const updateUserProfile = async (req, res) => {
   try {
-    const userId = req.user.user_id;
+    const user_id = req.user.user_id;
     const { first_name, last_name, birthday } = req.body;
 
-    const user = await User.findByPk(userId);
+    const user = await User.findById(user_id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     // Update only allowed fields
-    user.first_name = first_name;
-    user.last_name = last_name;
-    user.birthday = birthday;
+    if (first_name !== undefined) user.first_name = first_name;
+    if (last_name !== undefined) user.last_name = last_name;
+    if (birthday !== undefined) user.birthday = birthday;
 
     await user.save();
 

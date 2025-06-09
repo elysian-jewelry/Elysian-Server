@@ -1,12 +1,10 @@
-// controllers/uploadController.js
-
-import cloudinary from '../../config/cloudinaryConfig.js';
+import cloudinary from '../config/cloudinaryConfig.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import pLimit from 'p-limit';
-import Product from '../../models/product.js';
-import ProductImage from '../../models/productImage.js';
+import Product from '../models/product.js';
+import ProductImage from '../models/productImage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,26 +16,26 @@ export const syncCloudinaryImages = async (req, res) => {
   let nextCursor = null;
 
   try {
-    // Step 1: Fetch all Cloudinary images and group by 'type/name'
+    // Step 1: Fetch Cloudinary images
     do {
       const result = await cloudinary.api.resources({
-        type: 'upload',
-        resource_type: 'image',
-        prefix: 'assets/',
+        type: "upload",
+        resource_type: "image",
+        prefix: "assets/",
         max_results: 1500,
-        next_cursor: nextCursor
+        next_cursor: nextCursor,
       });
 
       for (const resource of result.resources) {
         const imageUrl = resource.secure_url;
         const publicId = resource.public_id;
-        const folderPath = publicId.substring(0, publicId.lastIndexOf('/'));
+        const folderPath = publicId.substring(0, publicId.lastIndexOf("/"));
 
-        const parts = folderPath.split('/');
+        const parts = folderPath.split("/");
         if (parts.length < 3) continue;
 
         const type = parts[1];
-        const name = decodeURIComponent(parts.slice(2).join('/'));
+        const name = decodeURIComponent(parts.slice(2).join("/"));
         const key = `${type}/${name}`;
 
         if (!productImages[key]) productImages[key] = [];
@@ -47,42 +45,48 @@ export const syncCloudinaryImages = async (req, res) => {
       nextCursor = result.next_cursor;
     } while (nextCursor);
 
-    // Step 2: Fetch all products and attempt to match images
-    const products = await Product.findAll();
+    // Step 2: Link images to existing products
+    const products = await Product.find();
 
     for (const product of products) {
       const key = `${product.type}/${product.name}`;
-      const images = productImages[key];
+      const imageUrls = productImages[key];
 
-      if (!images || images.length === 0) {
+      if (!imageUrls || imageUrls.length === 0) {
         notFoundProducts.push({ name: product.name, type: product.type });
         continue;
       }
 
-      for (let i = 0; i < images.length; i++) {
-        await ProductImage.create({
-          product_id: product.product_id,
-          image_url: images[i],
-          is_primary: i === 0
+      const imageIds = [];
+
+      for (let i = 0; i < imageUrls.length; i++) {
+        const imageDoc = await ProductImage.create({
+          image_url: imageUrls[i],
+          is_primary: i === 0,
+          product_id: product._id,
         });
+        imageIds.push(imageDoc._id);
       }
+
+      product.images = imageIds;
+      await product.save();
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Cloudinary images synced to product_images table.',
-      unmatchedProducts: notFoundProducts
+      message: "Cloudinary images synced to product_images collection and linked to products.",
+      unmatchedProducts: notFoundProducts,
     });
-
   } catch (error) {
-    console.error('Error syncing Cloudinary images:', error);
+    console.error("Error syncing Cloudinary images:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to sync Cloudinary images.',
-      error: error.message
+      message: "Failed to sync Cloudinary images.",
+      error: error.message,
     });
   }
 };
+
 
 
 export const getAllImages = async (req, res) => {

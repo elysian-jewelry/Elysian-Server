@@ -1,5 +1,5 @@
 import App from "./app.js";
-import { birthdayPromoCron } from "./controllers/user/birthdayPromoCron.controller.js";
+import { birthdayPromoCron } from "./controllers/birthdayPromoCron.controller.js";
 
 const startServer = async () => {
   const app = new App();

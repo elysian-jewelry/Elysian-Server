@@ -30,20 +30,6 @@ class App {
       this.app.use(morgan("dev"));
     }
 
-  //   // ✅ Load models & associations BEFORE syncing
-  // import('./models/product.js');
-  // import('./models/productImage.js');
-  // import('./models/associations.js');
-
-
-    // try {
-    //   await sequelize.authenticate();
-    //   console.log("✅ MySQL connected successfully!");
-    //   await sequelize.sync();
-    //   console.log("📦 Models synced successfully.");
-    // } catch (err) {
-    //   console.error("❌ MySQL connection error:", err);
-    // }
   }
 
   // Middleware setup

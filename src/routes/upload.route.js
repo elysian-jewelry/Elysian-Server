@@ -1,5 +1,5 @@
 import express from "express";
-import { uploadImages, getAllImages, syncCloudinaryImages } from "../controllers/user/upload.controller.js";
+import { uploadImages, getAllImages, syncCloudinaryImages } from "../controllers/upload.controller.js";
 
 const router = express.Router();
 

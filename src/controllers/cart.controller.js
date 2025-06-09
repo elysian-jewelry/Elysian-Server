@@ -1,8 +1,8 @@
-import Cart from "../../models/cart.js";
-import CartItem from "../../models/cartItem.js";
-import Product from "../../models/product.js";
-import ProductImage from "../../models/productImage.js";
-import ProductVariant from "../../models/productVariant.js";
+import Cart from "../models/cart.js";
+import CartItem from "../models/cartItem.js";
+import Product from "../models/product.js";
+import ProductImage from "../models/productImage.js";
+import ProductVariant from "../models/productVariant.js";
 
 export const addItemToCart = async (req, res) => {
   try {

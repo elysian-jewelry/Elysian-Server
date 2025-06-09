@@ -1,6 +1,6 @@
-import Product from "../../models/product.js";
-import ProductImage from "../../models/productImage.js";
-import ProductVariant from "../../models/productVariant.js";
+import Product from "../models/product.js";
+import ProductImage from "../models/productImage.js";
+import ProductVariant from "../models/productVariant.js";
 import mongoose from "mongoose";
 
 // Featured products based on name and type
