@@ -163,18 +163,11 @@ export const checkout = async (req, res) => {
       }
     }
 
-    await CartItem.deleteMany({ _id: { $in: cart.items.map(i => i._id) } });
-    cart.items = [];
-    cart.total_price = 0;
-    await cart.save();
+    const shortOrderId = order._id.toString().slice(-5);  // e.g., 'bb3f0'
 
-    console.log(order._id);
-    console.log(first_name);
-    console.log(phone_number);
-    
 
     const sheetData = cart.items.map(item => [
-      order._id,
+      shortOrderId,
       `${first_name} ${last_name}`,
       item.product_id.type,
       item.product_id.name,
@@ -191,6 +184,13 @@ export const checkout = async (req, res) => {
     ]);
 
     await updateGoogleSheet(sheetData);
+
+    
+    await CartItem.deleteMany({ _id: { $in: cart.items.map(i => i._id) } });
+    cart.items = [];
+    cart.total_price = 0;
+    await cart.save();
+
 
     await sendOrderConfirmationEmail(req.user.email, first_name, last_name, order, cart.items.map(item => ({
       name: item.product_id.name,
