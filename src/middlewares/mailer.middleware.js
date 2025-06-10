@@ -100,6 +100,7 @@ export const sendOrderConfirmationEmail = async (email, first_name, last_name, o
             <th style="padding: 12px; text-align: left; color: #111;">Type</th>
             <th style="padding: 12px; text-align: left; color: #111;">Quantity</th>
             <th style="padding: 12px; text-align: left; color: #111;">Size</th>
+            <th style="padding: 12px; text-align: left; color: #111;">Color</th>
             <th style="padding: 12px; text-align: left; color: #111;">Price</th>
           </tr>
         </thead>
