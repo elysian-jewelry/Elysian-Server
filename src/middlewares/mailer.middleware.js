@@ -103,9 +103,6 @@ export const sendOrderConfirmationEmail = async (
   const summaryHtml = `
     <div style="margin-top: 20px; font-size: 15px; line-height: 1.6; color: #111; text-align: center;">
       <p><strong>Shipping Address:</strong> ${address}</p>
-      <p><strong>Subtotal:</strong> ${subtotal} EGP</p>
-      <p><strong>Shipping Cost:</strong> ${shipping_cost} EGP</p>
-      ${discount ? `<p><strong>Discount Applied:</strong> ${discount}%</p>` : ''}
       <p><strong>Total Amount:</strong> ${order.total_amount} EGP</p>
       <p><strong>Estimated Delivery:</strong> 4–7 working days 🚚</p>
     </div>
@@ -114,9 +111,9 @@ export const sendOrderConfirmationEmail = async (
   // Full HTML content
   const htmlContent = `
     <div style="font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #ffffff; max-width: 650px; margin: 40px auto; padding: 30px; border: 1px solid #f3f3f3; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); color: #111; text-align: center;">
-      <h1 style="color: #ff4d88;">Elysian Jewelry 💗</h1>
+      <h1 style="color: #ff4d88;">Elysian Jewelry</h1>
       <h2 style="color: #111; font-weight: 600;">
-        Thank you for your order, <span style="color: #ff4d88;">${first_name + ' ' + last_name || 'Valued Customer'}</span>!
+        Thank you for your order, <span style="color: #ff4d88;">${first_name + ' ' + last_name || 'Valued Customer'}</span>!💗
       </h2>
       <p style="font-size: 15px; margin-bottom: 20px; color: #111;">
         Here is your detailed receipt:
