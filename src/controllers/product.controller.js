@@ -33,7 +33,7 @@ export const getFeaturedProducts = async (req, res) => {
       })
       .populate({
         path: "product_variants",
-        select: "variant_id size price stock_quantity"
+        select: "variant_id size color price stock_quantity"
       });
 
     res.status(200).json(formatProductResponse(products));
@@ -55,7 +55,7 @@ export const getNewArrivalProducts = async (req, res) => {
       })
       .populate({
         path: "product_variants",
-        select: "variant_id size price stock_quantity"
+        select: "variant_id size color price stock_quantity"
       });
 
     res.status(200).json(formatProductResponse(products));
@@ -112,7 +112,7 @@ export const getProductsByType = async (req, res) => {
       })
       .populate({
         path: "product_variants",
-        select: "variant_id size price stock_quantity"
+        select: "variant_id size color price stock_quantity"
       })
       .sort({ _id: 1 }); // MongoDB equivalent of ORDER BY product_id ASC
 
@@ -123,6 +123,7 @@ export const getProductsByType = async (req, res) => {
       const variants = productObj.product_variants?.map(v => ({
         variant_id: v._id,
         size: v.size,
+        color: v.color,
         price: v.price,
         stock_quantity: v.stock_quantity
       })) || [];
@@ -158,6 +159,7 @@ const formatProductResponse = (productsRaw) => {
       ? plain.product_variants.map(v => ({
           variant_id: v._id,
           size: v.size,
+          color: v.color,
           price: v.price,
           stock_quantity: v.stock_quantity
         }))
@@ -191,7 +193,7 @@ export const getAllProducts = async (req, res) => {
       })
       .populate({
         path: "product_variants",
-        select: "size price stock_quantity",
+        select: "size price color stock_quantity",
       })
       .sort({ _id: 1 }); // equivalent to product_id ASC
 

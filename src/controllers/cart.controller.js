@@ -6,7 +6,7 @@ import ProductVariant from "../models/productVariant.js";
 
 export const addItemToCart = async (req, res) => {
   try {
-    const { product_id, variant_id, quantity, size } = req.body;
+    const { product_id, variant_id, quantity, size, color } = req.body;
     const user_id = req.user.user_id;
     console.log(user_id);
     
@@ -74,6 +74,7 @@ export const addItemToCart = async (req, res) => {
           cart_id: cart._id,
           product_id,
           variant_id,
+          color: variant.color,
           quantity,
           size: variant.size
         });
@@ -285,7 +286,7 @@ export const getUserCart = async (req, res) => {
               },
               select: "_id name type"
             },
-            select: "_id size price"
+            select: "_id size color price"
           },
           {
             path: "product_id",
@@ -319,6 +320,7 @@ export const getUserCart = async (req, res) => {
           quantity: item.quantity,
           variant_id: variant ? variant._id : null,
           size: item.size || variant?.size || null,
+          color: item.color || variant?.color || null,
           price: parseFloat(variant?.price || product.price || 0).toFixed(2),
           product_id: product._id,
           product_name: product.name || null,

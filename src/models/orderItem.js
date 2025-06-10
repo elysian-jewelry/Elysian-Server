@@ -23,6 +23,10 @@ const orderItemSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    color: {
+      type: String,
+      default: null,
+    },
     quantity: {
       type: Number,
       required: true,

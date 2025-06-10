@@ -11,7 +11,10 @@ const productVariantSchema = new mongoose.Schema(
     },
     size: {
       type: String,
-      required: true,
+      maxlength: 50,
+    },
+    color: {
+      type: String,
       maxlength: 50,
     },
     price: {
