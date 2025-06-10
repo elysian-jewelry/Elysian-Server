@@ -190,12 +190,7 @@ export const checkout = async (req, res) => {
 
     await updateGoogleSheet(sheetData);
 
-    
-    await CartItem.deleteMany({ _id: { $in: cart.items.map(i => i._id) } });
-    cart.items = [];
-    cart.total_price = 0;
-    await cart.save();
-
+  
 
     await sendOrderConfirmationEmail(req.user.email, first_name, last_name, order, cart.items.map(item => ({
       name: item.product_id.name,
@@ -211,6 +206,13 @@ export const checkout = async (req, res) => {
         promo_code: promo_code.trim().toUpperCase()
       });
     }
+
+      
+    await CartItem.deleteMany({ _id: { $in: cart.items.map(i => i._id) } });
+    cart.items = [];
+    cart.total_price = 0;
+    await cart.save();
+
 
     return res.status(201).json({ message: "Order placed successfully.", order });
 
