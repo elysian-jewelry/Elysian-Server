@@ -80,6 +80,7 @@ export const sendOrderConfirmationEmail = async (email, first_name, last_name, o
       <td style="padding: 10px;">${item.type}</td>
       <td style="padding: 10px;">${item.quantity}</td>
       <td style="padding: 10px;">${item.size || '-'}</td>
+      <td style="padding: 10px;">${item.color || '-'}</td>
       <td style="padding: 10px;">${item.price} EGP</td>
     </tr>
   `).join('');
