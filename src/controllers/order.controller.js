@@ -76,7 +76,7 @@ export const checkout = async (req, res) => {
       return res.status(400).json({ message: "Cart is empty." });
     }
 
-    const total_price = cart.items.reduce((sum, item) => {
+    const subtotal = cart.items.reduce((sum, item) => {
       const price = item.variant_id ? parseFloat(item.variant_id.price) : parseFloat(item.product_id.price);
       return sum + price * item.quantity;
     }, 0);
@@ -130,11 +130,11 @@ export const checkout = async (req, res) => {
     const shipping_cost = shippingData.cost;
     const governorateName = shippingData.name;
 
-    const total_amount = total_price - (total_price * (discount / 100)) + shipping_cost;
+    const total_amount = subtotal - (subtotal * (discount / 100)) + shipping_cost;
 
     const order = await Order.create({
       user_id,
-      subtotal: total_price,
+      subtotal,
       discount_percent: discount,
       total_amount,
       shipping_cost,
@@ -183,24 +183,22 @@ export const checkout = async (req, res) => {
       'Pending',
       total_amount.toFixed(2),
       `${discount}%`,
-      total_price.toFixed(2),
+      subtotal.toFixed(2),
       shipping_cost,
       new Date().toLocaleString()
     ]);
 
     await updateGoogleSheet(sheetData);
 
-  
-
-    await sendOrderConfirmationEmail(req.user.email, first_name, last_name, order, cart.items.map(item => ({
+    await sendOrderConfirmationEmail(req.user.email, first_name, last_name, `${address}, ${apartment_no}, ${city}, ${governorateName}`, discount, subtotal, shipping_cost, order, cart.items.map(item => ({
       name: item.product_id.name,
       type: item.product_id.type,
       quantity: item.quantity,
       size: item.variant_id?.size || null,
       color: item.variant_id?.color || null,
       price: item.variant_id?.price || item.product_id.price,
-    })), discount);
-
+    })));
+    
     if (promo_code && discount > 0) {
       await PromoCode.deleteOne({
         user_id,

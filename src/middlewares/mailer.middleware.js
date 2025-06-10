@@ -72,36 +72,65 @@ export const sendPasswordResetEmail = async (user, verificationCode) => {
   }
 };
 
+export const sendOrderConfirmationEmail = async (
+  email,
+  first_name,
+  last_name,
+  address,
+  discount,
+  subtotal,
+  shipping_cost,
+  order,
+  items
+) => {
+  // Build product rows
+  const productListHtml = items
+    .map(
+      (item) => `
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 10px; text-align: center;">${item.name}</td>
+        <td style="padding: 10px; text-align: center;">${item.type}</td>
+        <td style="padding: 10px; text-align: center;">${item.quantity}</td>
+        <td style="padding: 10px; text-align: center;">${item.size || '-'}</td>
+        <td style="padding: 10px; text-align: center;">${item.color || '-'}</td>
+        <td style="padding: 10px; text-align: center;">${item.price} EGP</td>
+      </tr>
+    `
+    )
+    .join('');
 
-export const sendOrderConfirmationEmail = async (email, first_name, last_name, order, items, discount) => {
-  const productListHtml = items.map(item => `
-    <tr style="border-bottom: 1px solid #eee;">
-      <td style="padding: 10px;">${item.name}</td>
-      <td style="padding: 10px;">${item.type}</td>
-      <td style="padding: 10px;">${item.quantity}</td>
-      <td style="padding: 10px;">${item.size || '-'}</td>
-      <td style="padding: 10px;">${item.color || '-'}</td>
-      <td style="padding: 10px;">${item.price} EGP</td>
-    </tr>
-  `).join('');
+  // Build summary section
+  const summaryHtml = `
+    <div style="margin-top: 20px; font-size: 15px; line-height: 1.6; color: #111; text-align: center;">
+      <p><strong>Shipping Address:</strong> ${address}</p>
+      <p><strong>Subtotal:</strong> ${subtotal} EGP</p>
+      <p><strong>Shipping Cost:</strong> ${shipping_cost} EGP</p>
+      ${discount ? `<p><strong>Discount Applied:</strong> ${discount}%</p>` : ''}
+      <p><strong>Total Amount:</strong> ${order.total_amount} EGP</p>
+      <p><strong>Estimated Delivery:</strong> 4–7 working days 🚚</p>
+    </div>
+  `;
 
+  // Full HTML content
   const htmlContent = `
-    <div style="font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #ffffff; max-width: 650px; margin: 40px auto; padding: 30px; border: 1px solid #f3f3f3; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); color: #111;">
-      <h1 style="text-align: center; color: #ff4d88;">Elysian Jewelry 💗</h1>
+    <div style="font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #ffffff; max-width: 650px; margin: 40px auto; padding: 30px; border: 1px solid #f3f3f3; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); color: #111; text-align: center;">
+      <h1 style="color: #ff4d88;">Elysian Jewelry 💗</h1>
+      <h2 style="color: #111; font-weight: 600;">
+        Thank you for your order, <span style="color: #ff4d88;">${first_name + ' ' + last_name || 'Valued Customer'}</span>!
+      </h2>
+      <p style="font-size: 15px; margin-bottom: 20px; color: #111;">
+        Here is your detailed receipt:
+      </p>
 
-      <h2 style="color: #111; font-weight: 600;">Thank you for your order, <span style="color: #ff4d88;">${first_name + ' ' + last_name || 'Valued Customer'}</span>!</h2>
-      <p style="font-size: 15px; margin-bottom: 20px; color: #111;">Here is your detailed receipt:</p>
-    
-
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background: #fffafa; border: 1px solid #fce4ec; border-radius: 8px; overflow: hidden;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background: #fffafa; border: 1px solid #fce4ec; border-radius: 8px; overflow: hidden; margin: 0 auto;">
         <thead style="background-color: #ffe0eb;">
           <tr>
-            <th style="padding: 12px; text-align: left; color: #111;">Product</th>
-            <th style="padding: 12px; text-align: left; color: #111;">Type</th>
-            <th style="padding: 12px; text-align: left; color: #111;">Quantity</th>
-            <th style="padding: 12px; text-align: left; color: #111;">Size</th>
-            <th style="padding: 12px; text-align: left; color: #111;">Color</th>
-            <th style="padding: 12px; text-align: left; color: #111;">Price</th>
+            <th style="padding: 12px; text-align: center; color: #111;">Product</th>
+            <th style="padding: 12px; text-align: center; color: #111;">Type</th>
+            <th style="padding: 12px; text-align: center; color: #111;">Quantity</th>
+            <th style="padding: 12px; text-align: center; color: #111;">Size</th>
+            <th style="padding: 12px; text-align: center; color: #111;">Color</th>
+            <th style="padding: 12px; text-align: center; color: #111;">Price</th>
           </tr>
         </thead>
         <tbody>
@@ -109,15 +138,11 @@ export const sendOrderConfirmationEmail = async (email, first_name, last_name, o
         </tbody>
       </table>
 
-      <div style="margin-top: 25px; font-size: 15px; line-height: 1.6; color: #111;">
-        <p><strong>Total:</strong> <span style="color: #111;">${order.total_amount} EGP</span></p>
-        ${discount ? `<p><strong>Discount Applied:</strong> ${discount}%</p>` : ''}
-        <p><strong>Estimated Delivery:</strong> 4–7 working days 🚚</p>
-      </div>
+      ${summaryHtml}
 
       <hr style="margin: 30px 0; border: none; border-top: 1px solid #f0f0f0;">
 
-      <p style="text-align: center; font-size: 14px; color: #444;">
+      <p style="font-size: 14px; color: #444;">
         We hope you love your jewelry as much as we loved making it! 💗<br><br>
         <span style="color: #aaa;">This is an automated email. Please do not reply.</span>
       </p>
@@ -131,11 +156,11 @@ export const sendOrderConfirmationEmail = async (email, first_name, last_name, o
       subject: "🧾 Your Elysian Jewelry Order Receipt",
       html: htmlContent,
     });
-
   } catch (err) {
     console.error("Failed to send order receipt:", err.message);
   }
 };
+
 
 
 export const sendBirthdayPromoCodeEmail = async (user, promoCode) => {
