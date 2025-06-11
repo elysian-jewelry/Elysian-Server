@@ -7,9 +7,9 @@ import { sendBirthdayPromoCodeEmail } from '../middlewares/mailer.middleware.js'
 // Utility: Generate short unique promo code (6 characters)
 const generatePromoCode = () => uuidv4().replace(/-/g, '').substring(0, 6).toUpperCase();
 
-// Cron job: Runs every day at 1:00 AM
+// Cron job: Runs every day at 4:00 AM
 export const birthdayPromoCron = () => {
-  cron.schedule('0 1 * * *', async () => {
+  cron.schedule('0 4 * * *', async () => {
     const tomorrowAt1AM = new Date();
     tomorrowAt1AM.setDate(tomorrowAt1AM.getDate() + 1);
     tomorrowAt1AM.setHours(1, 0, 0, 0);
@@ -41,7 +41,7 @@ export const birthdayPromoCron = () => {
           discount: 20
         });
 
-        console.log(`🎉 Sent promo code ${promoCode} to user ${user.email}`);
+        // console.log(`🎉 Sent promo code ${promoCode} to user ${user.email}`);
 
         // Send promo code email
         await sendBirthdayPromoCodeEmail(user, promoCode);

@@ -239,7 +239,6 @@ export const updateGoogleSheet = async (sheetData) => {
       resource,
     });
 
-    console.log('✅ Sheet updated:', response.data);
     return response.data;
   } catch (error) {
     console.error('❌ Error updating sheet:', error);
