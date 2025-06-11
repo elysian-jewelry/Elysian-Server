@@ -164,7 +164,7 @@ export const sendBirthdayPromoCodeEmail = async (user, promoCode) => {
   const displayName =
     first_name && last_name
       ? `${first_name} ${last_name}`
-      : 'Lovely Soul';
+      : '';
 
   const mailOptions = {
     from: process.env.EMAIL_USER,
@@ -172,7 +172,7 @@ export const sendBirthdayPromoCodeEmail = async (user, promoCode) => {
     subject: "🎉 Happy Birthday from Elysian Jewelry 💗",
     html: `
       <div style="font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #fff; color: #111; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #ffc9dc; border-radius: 12px;">
-        <h2 style="color: #ff4d88; text-align: center;">Happy Birthday, <span style="color: #111;">${displayName}!</span> 🎂💗</h2>
+        <h2 style="color: #ff4d88; text-align: center;">Happy Birthday!<span style="color: #111;">${displayName}</span> 🎂💗</h2>
 
         <p style="font-size: 16px; margin-top: 15px;">
           We're so glad to have you as part of the <strong>Elysian Jewelry</strong> family.
@@ -189,7 +189,7 @@ export const sendBirthdayPromoCodeEmail = async (user, promoCode) => {
           Enjoy <strong>20% OFF</strong> valid <strong>today only</strong>
         </p>
 
-        <p style="font-size: 14px; margin-top: 30px;">Treat yourself to something beautiful — you deserve it!</p>
+        <p style="font-size: 14px; margin-top: 30px;">Treat yourself to something beautiful you deserve it!</p>
 
         <p style="margin-top: 30px;">With sparkle and love ✨<br/>
           <strong style="color: #ff4d88;">The Elysian Jewelry Team</strong>

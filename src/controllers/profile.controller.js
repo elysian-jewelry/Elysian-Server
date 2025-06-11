@@ -25,10 +25,10 @@ export const updateUserProfile = async (req, res) => {
     const user = await User.findById(user_id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Update only allowed fields
-    if (first_name !== undefined) user.first_name = first_name;
-    if (last_name !== undefined) user.last_name = last_name;
-    if (birthday !== undefined) user.birthday = birthday;
+  
+    user.first_name = first_name;
+    user.last_name = last_name;
+    user.birthday = birthday;
 
     await user.save();
 
