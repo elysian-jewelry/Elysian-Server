@@ -1,14 +1,10 @@
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
-import User from "../models/user.js";
 import Product from "../models/product.js";
-import PromoCode from "../models/promoCode.js";
 import ProductVariant from "../models/productVariant.js";
+import User from "../models/user.js";
 import ProductImage from "../models/productImage.js";
 import Cart from "../models/cart.js";
-import CartItem from "../models/cartItem.js";
-import Order from "../models/order.js";
-import OrderItem from "../models/orderItem.js";
 import { Op } from "sequelize";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
@@ -268,16 +264,6 @@ export const resetDatabase = async (req, res) => {
   }
 };
 
-
-export const getAllUsers = async (req, res) => {
-  try {
-    const users = await User.findAll();
-    res.status(200).json(users);
-  } catch (err) {
-    console.error("Error fetching users:", err);
-    res.status(500).json({ message: "Failed to fetch users." });
-  }
-};
 
 export const login = async (req, res) => {
   try {

@@ -3,9 +3,7 @@ import {
   login,
   // signup,
   verifyCodeAndLogin,
-  resetDatabase,
-  getAllUsers
-} from "../controllers/auth.controller.js";
+  resetDatabase} from "../controllers/auth.controller.js";
 
 import { validate } from "../middlewares/validation.middleware.js";
 import { signupSchema, loginSchema, changePasswordSchema } from "../validation/users.auth.validation.js";
@@ -15,7 +13,6 @@ const router = express.Router();
 // DELETE /cleanup
 router.post('/reset-db', resetDatabase);
 
-router.get("/users", getAllUsers);
 // Auth Routes
 router.post("/auth/login", validate(loginSchema, "body"), login);
 // router.post("/auth/signup", validate(signupSchema, "body"), signup);

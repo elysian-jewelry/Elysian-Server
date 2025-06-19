@@ -1,10 +1,8 @@
 import express from "express";
-import { getAllProducts, getProductsByType, updateProductQuantity , getFeaturedProducts, getNewArrivalProducts} from "../controllers/product.controller.js";
+import { getAllProducts, getProductsByType , getFeaturedProducts, getNewArrivalProducts} from "../controllers/product.controller.js";
 
 const router = express.Router();
 
-// Update product quantity by name and type
-router.put("/products/update-quantity", updateProductQuantity);
 
 // Get all products
 router.get("/products", getAllProducts);

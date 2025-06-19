@@ -4,10 +4,12 @@ import cartRoute from "./cart.route.js"; // Default import
 import orderRoute from "./order.route.js"; // Default import
 import profileRoute from "./profile.route.js"; // Default import
 import uploadRoute from "./upload.route.js"; // Default import
+import AdminRoute from "./admin.route.js"; // Default import
 
 
 export default (app) => {
   app.use(userRoute);
+  app.use(AdminRoute);
   app.use(productsRoute);
   app.use(cartRoute);
   app.use(orderRoute);
