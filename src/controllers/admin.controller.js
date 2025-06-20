@@ -51,7 +51,6 @@ export const addProductWithVariants = async (req, res) => {
   }
 };
 
-
 export const getAllUsersWithOrderStats = async (req, res) => {
   try {
     // Step 1: Get user count
@@ -67,13 +66,16 @@ export const getAllUsersWithOrderStats = async (req, res) => {
       }
     ]);
 
-    // Step 3: Map order counts by user_id for quick lookup
+    // Step 3: Calculate total orders
+    const totalOrders = ordersPerUser.reduce((sum, entry) => sum + entry.orderCount, 0);
+
+    // Step 4: Map order counts by user_id for quick lookup
     const orderMap = {};
     ordersPerUser.forEach(entry => {
       orderMap[entry._id.toString()] = entry.orderCount;
     });
 
-    // Step 4: Get all users and append order count
+    // Step 5: Get all users and append order count
     const users = await User.find().lean(); // use .lean() to get plain objects
 
     const usersWithOrders = users.map(user => ({
@@ -83,6 +85,7 @@ export const getAllUsersWithOrderStats = async (req, res) => {
 
     res.status(200).json({
       totalUsers,
+      totalOrders,
       users: usersWithOrders
     });
   } catch (error) {
