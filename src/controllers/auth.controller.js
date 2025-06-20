@@ -46,7 +46,6 @@ const generateToken = (user) => {
 export const resetDatabase = async (req, res) => {
   try {
     const collections = [
-      "users",
       "promo_codes",
       "products",
       "product_variants",
@@ -139,6 +138,7 @@ export const resetDatabase = async (req, res) => {
   { name: 'Pearly', price: 490, type: 'Back Chains', stock_quantity: 99999 },
   { name: 'The OG', price: 680, type: 'Back Chains', stock_quantity: 99999 },
   { name: 'Vertical Gleam', price: 680, type: 'Back Chains', stock_quantity: 99999 },
+  { name: 'Coral Drop', price: 430, type: 'Necklaces', stock_quantity: 99999 },
   { name: 'Bling Drop', price: 310, type: 'Necklaces', stock_quantity: 99999 },
   { name: 'Blue Aura Drop', price: 310, type: 'Necklaces', stock_quantity: 99999 },
   { name: 'Blue Pearl', price: 370, type: 'Necklaces', stock_quantity: 99999 },
@@ -183,7 +183,8 @@ export const resetDatabase = async (req, res) => {
   { name: 'Vertical Gleam', price: 490, type: 'Waist Chains', stock_quantity: 99999 },
   { name: 'The OG', price: 680, type: 'Body Chains', stock_quantity: 99999 },
   { name: 'Emerald', price: 680, type: 'Body Chains', stock_quantity: 99999 },
-  { name: 'Vertical Gleam', price: 680, type: 'Body Chains', stock_quantity: 99999 }
+  { name: 'Vertical Gleam', price: 680, type: 'Body Chains', stock_quantity: 99999 },
+  { name: 'The Charm Bag', price: 790, type: 'Bags', stock_quantity: 99999 }
 ];
 
 
@@ -223,6 +224,14 @@ export const resetDatabase = async (req, res) => {
         variants: [
           { color: "Gold", price: 350.0, stock_quantity: 99999 },
           { color: "Silver", price: 350.0, stock_quantity: 99999 }
+        ]
+      },
+        {
+        product_name: "The Charm Bag",
+        product_type: "Bags",
+        variants: [
+          { size: "Large Charms", price: 790.0, stock_quantity: 99999 },
+          { size: "Small Charms", price: 790.0, stock_quantity: 99999 }
         ]
       },
     ];

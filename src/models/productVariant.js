@@ -35,6 +35,6 @@ const productVariantSchema = new mongoose.Schema(
 // Ensure no duplicate size for same product (similar to UNIQUE constraint)
 productVariantSchema.index({ product: 1, size: 1 }, { unique: true });
 
-const ProductVariant = mongoose.model("ProductVariant", productVariantSchema);
+const ProductVariant = mongoose.models.ProductVariant || mongoose.model("ProductVariant", productVariantSchema);
 
 export default ProductVariant;

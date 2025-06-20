@@ -296,7 +296,7 @@ export const uploadImages = async (req, res) => {
         const localPath = path.join(folderPath, imgFile);
 
         const uploadResult = await cloudinary.uploader.upload(localPath, {
-          folder: `assets/Necklaces/${folderName}`
+          folder: `assets/Bags/${folderName}`
         });
 
         console.log(`Uploaded: ${folderName}/${imgFile}`);

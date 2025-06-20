@@ -19,7 +19,8 @@ const excludedPaths = [
   "/products/new-arrivals",
   "/products/featured",
   "/generate-dummy-data",
-  "/admin/users-with-orders"
+  "/admin/users-with-orders",
+  "/admin/add-product"
 ];
 
 export const authenticateJWT = (req, res, next) => {

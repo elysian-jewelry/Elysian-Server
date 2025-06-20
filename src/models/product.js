@@ -26,7 +26,8 @@ const productSchema = new mongoose.Schema(
         "Back Chains",
         "Body Chains",
         "Waist Chains",
-        "Sets"
+        "Sets",
+        "Bags"
       ],
     },
     stock_quantity: {
