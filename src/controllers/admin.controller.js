@@ -1,7 +1,7 @@
 import Product from "../models/product.js";
-import User from "../models/User.js";
-import Order from "../models/Order.js";
-import ProductVariant from "../models/ProductVariant.js";
+import User from "../models/user.js";
+import Order from "../models/order.js";
+import ProductVariant from "../models/productVariant.js";
 
 // Controller to insert product with optional variants
 export const addProductWithVariants = async (req, res) => {
