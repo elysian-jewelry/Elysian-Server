@@ -20,12 +20,17 @@ const excludedPaths = [
   "/products/featured",
   "/generate-dummy-data",
   "/admin/users-with-orders",
-  "/admin/add-product"
+  "/admin/add-product",
+  "/admin/add-product-images",
+  "/admin/products/swap-order",
+  "/admin/products/set-primary-image",
+  "/public"
 ];
 
 export const authenticateJWT = (req, res, next) => {
   
-  if (excludedPaths.includes(req.path)) {
+   // ✅ Exclude any route that starts with "/public"
+  if (excludedPaths.some((path) => req.path.startsWith(path))) {
     return next(); // Skip JWT check for public routes
   }
 

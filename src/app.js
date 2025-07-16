@@ -38,7 +38,7 @@ class App {
   initializeMiddlewares() {
     this.app.use(cors());
     this.app.use(express.json());
-    this.app.use("/uploads", express.static(path.join(this.__dirname, "uploads")));
+    this.app.use("/public", express.static(path.join(this.__dirname, "public")));
 
     // ✅ Apply JWT middleware globally (excluding public routes)
     this.app.use(authenticateJWT);

@@ -84,10 +84,15 @@ export const getProductsByType = async (req, res) => {
         path: "product_variants",
         select: "variant_id size color price stock_quantity"
       })
-      .sort({ _id: 1 }); // MongoDB equivalent of ORDER BY product_id ASC
+      .sort({ sort_order: 1 }); // MongoDB equivalent of ORDER BY product_id ASC
 
     const formatted = products.map((product) => {
       const productObj = product.toObject();
+
+      // 🆕 Sort images so primary comes first
+      if (productObj.images && productObj.images.length > 0) {
+        productObj.images.sort((a, b) => b.is_primary - a.is_primary);
+      }
 
       // Format variants
       const variants = productObj.product_variants?.map(v => ({
@@ -165,7 +170,7 @@ export const getAllProducts = async (req, res) => {
         path: "product_variants",
         select: "size price color stock_quantity",
       })
-      .sort({ _id: 1 }); // equivalent to product_id ASC
+      .sort({ sort_order: 1 }); // equivalent to product_id ASC
 
     res.status(200).json(formatProductResponse(products));
   } catch (error) {

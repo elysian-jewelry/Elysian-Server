@@ -34,6 +34,7 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    sort_order: { type: Number, default: 0 }, // 🆕 Add this line
     images: [
       {
         type: mongoose.Schema.Types.ObjectId,
