@@ -130,6 +130,12 @@ const formatProductResponse = (productsRaw) => {
   return productsRaw.map(product => {
     const plain = product.toObject();
 
+      // 🆕 Sort images so primary image comes first
+    if (plain.images && plain.images.length > 0) {
+      plain.images.sort((a, b) => b.is_primary - a.is_primary);
+    }
+
+
     const variants = plain.product_variants?.length
       ? plain.product_variants.map(v => ({
           variant_id: v._id,
