@@ -18,6 +18,133 @@ const __dirname = path.dirname(__filename);
 
 
 
+export const uploadProductImages = async (req, res) => {
+  const { category, product, directory } = req.body;
+
+  if (!category || !product || !directory) {
+    return res.status(400).json({
+      success: false,
+      message: "category, product, and directory are required in request body.",
+    });
+  }
+
+  const productDir = path.resolve(directory);
+
+  if (!fs.existsSync(productDir) || !fs.statSync(productDir).isDirectory()) {
+    return res.status(400).json({
+      success: false,
+      message: "Provided directory does not exist or is not a directory.",
+    });
+  }
+
+  try {
+    const uploadResults = [];
+    const imageFiles = fs
+      .readdirSync(productDir)
+      .filter((f) => /\.(jpg|jpeg|png|webp)$/i.test(f)); // Include .webp too
+
+    if (imageFiles.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No image files found in the provided directory.",
+      });
+    }
+
+    for (const imgFile of imageFiles) {
+      const localPath = path.join(productDir, imgFile);
+
+      // Upload to Cloudinary under assets/<category>/<product>
+      const uploadResult = await cloudinary.uploader.upload(localPath, {
+        folder: `assets/${category}/${product}`,
+      });
+
+      console.log(`✅ Uploaded: ${category}/${product}/${imgFile}`);
+
+      uploadResults.push({
+        fileName: imgFile,
+        relativePath: `${category}/${product}/${imgFile}`.replace(/\\/g, "/"),
+        cloudinaryUrl: uploadResult.secure_url,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `✅ All images for ${product} uploaded successfully.`,
+      uploads: uploadResults,
+    });
+  } catch (error) {
+    console.error("❌ Upload error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to upload product images.",
+      error: error.message,
+    });
+  }
+};
+
+export const uploadImages = async (req, res) => {
+  const { parentFolder } = req.body;
+
+  if (!parentFolder) {
+    return res.status(400).json({ success: false, message: 'parentFolder is required in request body.' });
+  }
+
+  const rootDir = path.resolve(`C:\\Users\\samir\\Downloads\\${parentFolder}`);
+
+  if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) {
+    return res.status(400).json({ success: false, message: 'Provided parent folder does not exist or is not a directory.' });
+  }
+
+  try {
+    const uploadResults = [];
+
+    // Recursive function to traverse folders
+    const traverseAndUpload = async (currentDir, relativePath = "") => {
+      const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(currentDir, entry.name);
+        const cloudinaryPath = path.join(relativePath).replace(/\\/g, "/"); // preserve folder structure
+
+        if (entry.isDirectory()) {
+          // Recursively traverse subdirectories
+          await traverseAndUpload(fullPath, path.join(relativePath, entry.name));
+        } else if (/\.(jpg|jpeg|png|webp)$/i.test(entry.name)) {
+          // Upload file to Cloudinary preserving folder structure
+          const uploadResult = await cloudinary.uploader.upload(fullPath, {
+            folder: `assets/${cloudinaryPath}`, // Cloudinary folder structure
+          });
+          console.log(`✅ Uploaded: ${cloudinaryPath}/${entry.name}`);
+
+          uploadResults.push({
+            localPath: fullPath,
+            cloudinaryUrl: uploadResult.secure_url,
+            relativePath: `${cloudinaryPath}/${entry.name}`.replace(/\\/g, "/"),
+          });
+        }
+      }
+    };
+
+    // Start recursive traversal from rootDir
+    await traverseAndUpload(rootDir);
+
+    return res.status(200).json({
+      success: true,
+      message: "✅ All images uploaded successfully with relative paths preserved.",
+      uploads: uploadResults,
+    });
+
+  } catch (error) {
+    console.error('❌ Upload error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to upload images from subfolders.',
+      error: error.message,
+    });
+  }
+};
+
+
 // Utility: insert in batches to avoid memory issues
 const chunkInsert = async (items, model, chunkSize = 500) => {
   for (let i = 0; i < items.length; i += chunkSize) {
@@ -127,14 +254,17 @@ export const generateDummyData = async (req, res) => {
   }
 };
 
-
 export const syncCloudinaryImages = async (req, res) => {
   const productImages = {}; // { 'Earrings/Tiffany': [url1, url2] }
   const notFoundProducts = [];
   let nextCursor = null;
 
   try {
-    // Step 1: Fetch Cloudinary images
+    // 🗑 Step 1: Drop product_images collection
+    await ProductImage.collection.drop();
+    console.log("✅ Dropped existing product_images collection.");
+
+    // Step 2: Fetch all Cloudinary images under assets/
     do {
       const result = await cloudinary.api.resources({
         type: "upload",
@@ -150,9 +280,9 @@ export const syncCloudinaryImages = async (req, res) => {
         const folderPath = publicId.substring(0, publicId.lastIndexOf("/"));
 
         const parts = folderPath.split("/");
-        if (parts.length < 3) continue;
+        if (parts.length < 3) continue; // Skip if folder structure doesn't match assets/type/name
 
-        const type = parts[1];
+        const type = decodeURIComponent(parts[1]);
         const name = decodeURIComponent(parts.slice(2).join("/"));
         const key = `${type}/${name}`;
 
@@ -163,7 +293,9 @@ export const syncCloudinaryImages = async (req, res) => {
       nextCursor = result.next_cursor;
     } while (nextCursor);
 
-    // Step 2: Link images to existing products
+    console.log("✅ Fetched images from Cloudinary.");
+
+    // Step 3: Loop over all products and link images
     const products = await Product.find();
 
     for (const product of products) {
@@ -171,32 +303,44 @@ export const syncCloudinaryImages = async (req, res) => {
       const imageUrls = productImages[key];
 
       if (!imageUrls || imageUrls.length === 0) {
+        console.warn(`⚠️ No images found for product: ${key}`);
         notFoundProducts.push({ name: product.name, type: product.type });
         continue;
       }
 
       const imageIds = [];
 
+      // Create ProductImage docs for each image
       for (let i = 0; i < imageUrls.length; i++) {
         const imageDoc = await ProductImage.create({
-          image_url: imageUrls[i],
-          is_primary: i === 0,
           product_id: product._id,
+          image_url: imageUrls[i],
+          is_primary: i === 0, // Make first image primary
         });
         imageIds.push(imageDoc._id);
       }
 
-      product.images = imageIds;
-      await product.save();
+      // Clear existing images and add new ones
+      await Product.updateOne(
+        { _id: product._id },
+        {
+          $set: {
+            images: imageIds, // overwrite all previous image IDs
+          },
+        }
+      );
+
+      console.log(`✅ Replaced images for product: ${key}`);
     }
 
     return res.status(200).json({
       success: true,
-      message: "Cloudinary images synced to product_images collection and linked to products.",
+      message:
+        "Cloudinary images synced: product_images recreated and linked to products (replaced existing).",
       unmatchedProducts: notFoundProducts,
     });
   } catch (error) {
-    console.error("Error syncing Cloudinary images:", error);
+    console.error("❌ Error syncing Cloudinary images:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to sync Cloudinary images.",
@@ -204,7 +348,6 @@ export const syncCloudinaryImages = async (req, res) => {
     });
   }
 };
-
 
 
 export const getAllImages = async (req, res) => {
@@ -260,60 +403,3 @@ export const getAllImages = async (req, res) => {
 };
 
 
-export const uploadImages = async (req, res) => {
-  const { parentFolder } = req.body;
-
-  if (!parentFolder) {
-    return res.status(400).json({ success: false, message: 'parentFolder is required in request body.' });
-  }
-
-  const rootDir = path.resolve(`C:\\Users\\samir\\Downloads\\${parentFolder}`);
-
-  if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) {
-    return res.status(400).json({ success: false, message: 'Provided parent folder does not exist or is not a directory.' });
-  }
-
-  try {
-    const subFolders = fs.readdirSync(rootDir).filter(name =>
-      fs.statSync(path.join(rootDir, name)).isDirectory()
-    );
-
-    if (subFolders.length === 0) {
-      return res.status(400).json({ success: false, message: 'No folders found inside the provided parent folder.' });
-    }
-
-    for (const folderName of subFolders) {
-      const folderPath = path.join(rootDir, folderName);
-      const imageFiles = fs.readdirSync(folderPath).filter(f => /\.(jpg|jpeg|png)$/i.test(f));
-
-      if (imageFiles.length === 0) {
-        console.log(`No image files found in: ${folderName}`);
-        continue;
-      }
-
-      for (let i = 0; i < imageFiles.length; i++) {
-        const imgFile = imageFiles[i];
-        const localPath = path.join(folderPath, imgFile);
-
-        const uploadResult = await cloudinary.uploader.upload(localPath, {
-          folder: `assets/Bags/${folderName}`
-        });
-
-        console.log(`Uploaded: ${folderName}/${imgFile}`);
-      }
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: `All subfolder images uploaded successfully under assets/<folder-name> in Cloudinary.`
-    });
-
-  } catch (error) {
-    console.error('Upload error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to upload images from subfolders.',
-      error: error.message
-    });
-  }
-};

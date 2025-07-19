@@ -22,6 +22,7 @@ const excludedPaths = [
   "/admin/users-with-orders",
   "/admin/add-product",
   "/admin/add-product-images",
+  "/upload-product-images",
   "/admin/products/swap-order",
   "/admin/products/set-primary-image",
   "/public"

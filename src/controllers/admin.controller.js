@@ -6,33 +6,31 @@ import fs from "fs";
 import path from "path";
 import ProductImage from "../models/productImage.js";
 
-const baseFolder = "C:/Users/samir/Downloads/Elysian-Client/public/assets/Images";
+const baseFolder = "C:/Users/samir/Documents/Elysian-Client/public/assets/Images";
 const baseURL = "https://elysianjewelry.store/assets/images";
 const necklacesBaseURL = "https://elysian-images.netlify.app/assets/images"; // Different URL for Necklaces
-
 
 export const setPrimaryImageByNumber = async (req, res) => {
   const { productName, productType, imageNumber } = req.body;
 
   try {
-    // Find the product by name and type
+    // Find the product by name and type, and populate images
     const product = await Product.findOne({ name: productName, type: productType }).populate("images");
 
     if (!product) {
       return res.status(404).json({ message: "❌ Product not found." });
     }
 
-    // Construct the expected image file name
-    const targetFileName = `IMG_${imageNumber}.JPG`;
+    if (!product.images || product.images.length === 0) {
+      return res.status(404).json({ message: "❌ No images found for this product." });
+    }
 
-    // Find the target image by matching its URL
-    const targetImage = product.images.find(img =>
-      img.image_url.includes(targetFileName)
-    );
+    // Adjust for zero-based index (imageNumber=1 means index 0)
+    const index = imageNumber - 1;
 
-    if (!targetImage) {
-      return res.status(404).json({
-        message: `❌ Image IMG_${imageNumber}.JPG not found for product.`,
+    if (index < 0 || index >= product.images.length) {
+      return res.status(400).json({
+        message: `❌ Invalid image number. Must be between 1 and ${product.images.length}.`,
       });
     }
 
@@ -42,12 +40,13 @@ export const setPrimaryImageByNumber = async (req, res) => {
       { $set: { is_primary: false } }
     );
 
-    // Set the target image to is_primary = true
+    // Set the selected image to is_primary = true
+    const targetImage = product.images[index];
     targetImage.is_primary = true;
     await targetImage.save();
 
     return res.status(200).json({
-      message: `✅ Image IMG_${imageNumber}.JPG is now the primary image.`,
+      message: `✅ Image #${imageNumber} is now set as the primary image.`,
     });
   } catch (error) {
     console.error(error);
@@ -109,7 +108,7 @@ export const checkAndAddProductImages = async (req, res) => {
       // Read images in product folder
       const files = fs
         .readdirSync(productFolder)
-        .filter((f) => f.toLowerCase().endsWith(".jpg") || f.toLowerCase().endsWith(".png") || f.toLowerCase().endsWith(".jpeg"));
+        .filter((f) => f.toLowerCase().endsWith(".webp"));
 
       if (files.length === 0) {
         results.push({
