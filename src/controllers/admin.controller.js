@@ -2,170 +2,70 @@ import Product from "../models/product.js";
 import User from "../models/user.js";
 import Order from "../models/order.js";
 import ProductVariant from "../models/productVariant.js";
-import fs from "fs";
-import path from "path";
-import ProductImage from "../models/productImage.js";
+import PromoCode from "../models/promoCode.js";
 
 const baseFolder = "C:/Users/samir/Documents/Elysian-Client/public/assets/Images";
 const baseURL = "https://elysianjewelry.store/assets/images";
 const necklacesBaseURL = "https://elysian-images.netlify.app/assets/images"; // Different URL for Necklaces
 
-export const setPrimaryImageByNumber = async (req, res) => {
-  const { productName, productType, imageNumber } = req.body;
 
-  try {
-    // Find the product by name and type, and populate images
-    const product = await Product.findOne({ name: productName, type: productType }).populate("images");
+export const updateProductSortOrder = async (req, res) => {
+  const { category, orderedNames } = req.body;
 
-    if (!product) {
-      return res.status(404).json({ message: "❌ Product not found." });
-    }
-
-    if (!product.images || product.images.length === 0) {
-      return res.status(404).json({ message: "❌ No images found for this product." });
-    }
-
-    // Adjust for zero-based index (imageNumber=1 means index 0)
-    const index = imageNumber - 1;
-
-    if (index < 0 || index >= product.images.length) {
-      return res.status(400).json({
-        message: `❌ Invalid image number. Must be between 1 and ${product.images.length}.`,
-      });
-    }
-
-    // Set all images to is_primary = false
-    await ProductImage.updateMany(
-      { product_id: product._id },
-      { $set: { is_primary: false } }
-    );
-
-    // Set the selected image to is_primary = true
-    const targetImage = product.images[index];
-    targetImage.is_primary = true;
-    await targetImage.save();
-
-    return res.status(200).json({
-      message: `✅ Image #${imageNumber} is now set as the primary image.`,
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      message: "❌ Failed to set primary image.",
-      error: error.message,
+  if (!category || !Array.isArray(orderedNames)) {
+    return res.status(400).json({
+      success: false,
+      message: "Both 'category' and 'orderedNames[]' are required.",
     });
   }
-};
-
-
-export const swapProductOrder = async (req, res) => {
-  const { productName1, productName2, productType } = req.body;
 
   try {
-    // Fetch the two products by name and type
-    const product1 = await Product.findOne({ name: productName1, type: productType });
-    const product2 = await Product.findOne({ name: productName2, type: productType });
+    const notFound = [];
+    const alreadyCorrect = [];
+    let updatedCount = 0;
 
-    if (!product1 || !product2) {
-      return res.status(404).json({ message: "One or both products not found." });
-    }
+    // Update products in the provided order
+    for (let i = 0; i < orderedNames.length; i++) {
+      const productName = orderedNames[i];
+      const product = await Product.findOne({ name: productName, type: category });
 
-    // Swap their sort_order values
-    const tempOrder = product1.sort_order;
-    product1.sort_order = product2.sort_order;
-    product2.sort_order = tempOrder;
-
-    // Save changes
-    await product1.save();
-    await product2.save();
-
-    return res.status(200).json({ message: "Products order swapped successfully." });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Error swapping product order." });
-  }
-};
-
-
-export const checkAndAddProductImages = async (req, res) => {
-  try {
-    const products = await Product.find();
-    const results = [];
-
-    for (const product of products) {
-      const categoryFolder = path.join(baseFolder, product.type);
-      const productFolder = path.join(categoryFolder, product.name);
-
-      // Check if category and product folder exist
-      if (!fs.existsSync(productFolder)) {
-        results.push({
-          product: product.name,
-          status: "❌ Missing product folder",
-        });
+      if (!product) {
+        notFound.push(`❌ Not found: '${productName}' in category '${category}'`);
         continue;
       }
 
-      // Read images in product folder
-      const files = fs
-        .readdirSync(productFolder)
-        .filter((f) => f.toLowerCase().endsWith(".webp"));
-
-      if (files.length === 0) {
-        results.push({
-          product: product.name,
-          status: "⚠️ No images found in folder",
-        });
+      if (product.sort_order === i + 1) {
+        alreadyCorrect.push(productName);
         continue;
       }
 
-      // Step 1: Remove existing ProductImages for this product
-      await ProductImage.deleteMany({ product_id: product._id });
-
-      // Step 2: Rename and add new images
-      const savedImages = [];
-      for (let i = 0; i < files.length; i++) {
-        const ext = path.extname(files[i]).toUpperCase();
-        const newName = `IMG_${i + 1}${ext}`;
-        const oldPath = path.join(productFolder, files[i]);
-        const newPath = path.join(productFolder, newName);
-
-        // Rename file if needed
-        if (files[i] !== newName) {
-          fs.renameSync(oldPath, newPath);
-        }
-
-        // Use a different baseURL for Necklaces
-        const currentBaseURL = product.type === "Necklaces" ? necklacesBaseURL : baseURL;
-
-        const imageURL = `${currentBaseURL}/${encodeURIComponent(product.type)}/${encodeURIComponent(product.name)}/${newName}`;
-
-        const imgDoc = await ProductImage.create({
-          product_id: product._id,
-          image_url: imageURL,
-          is_primary: i === 0, // Set first image as primary
-        });
-
-        savedImages.push(imgDoc._id);
-      }
-
-      // Link images to product
-      product.images = savedImages;
+      product.sort_order = i + 1;
       await product.save();
-
-      results.push({
-        product: product.name,
-        status: "✅ Images added successfully",
-        imageCount: files.length,
-      });
+      updatedCount++;
     }
 
+    // Get all product names in the category
+    const allCategoryProducts = await Product.find({ type: category }).select("name");
+    const allProductNames = allCategoryProducts.map((p) => p.name);
+
+    // Find products not mentioned in the orderedNames list
+    const notIncluded = allProductNames.filter((name) => !orderedNames.includes(name));
+
     return res.status(200).json({
-      message: "✅ Product images processed",
-      details: results,
+      success: true,
+      message: `✅ Updated ${updatedCount} products in '${category}' category.`,
+      updatedCount,
+      notFound,
+      alreadyCorrect,
+      notIncludedInRequest: notIncluded,
     });
-  } catch (error) {
-    console.error("❌ Error in checkAndAddProductImages:", error);
-    res.status(500).json({ message: "Server error", error });
+  } catch (err) {
+    console.error("❌ Sort update error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error while updating sort order.",
+      error: err.message,
+    });
   }
 };
 
@@ -284,3 +184,39 @@ export const updateProductQuantity = async (req, res) => {
     res.status(500).json({ message: "Internal server error", error });
   }
 };
+
+
+// Create a new public promo code
+export const createPublicPromo = async (req, res) => {
+  try {
+    const { promo_code, discount, expiry_date } = req.body;
+
+    if (!promo_code || !discount) {
+      return res.status(400).json({ message: "promo_code and discount are required." });
+    }
+
+    const formattedCode = promo_code.trim().toUpperCase();
+
+    const existing = await PromoCode.findOne({ promo_code: formattedCode });
+    if (existing) {
+      return res.status(400).json({ message: "Promo code already exists." });
+    }
+
+    const promo = await PromoCode.create({
+      promo_code: formattedCode,
+      discount: Number(discount),
+      is_public: true,
+      used_by: [],
+      expiry_date: expiry_date ? new Date(expiry_date) : new Date("2100-01-01")
+    });
+
+    return res.status(201).json({
+      message: "Public promo code created successfully",
+      promo
+    });
+  } catch (error) {
+    console.error("Error creating promo code:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+

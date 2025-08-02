@@ -34,17 +34,24 @@ export const validatePromoCode = async (req, res) => {
     const formattedCode = promo_code.trim().toUpperCase();
     const objectId = new mongoose.Types.ObjectId(user_id);
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Compare only the date part
+    today.setHours(0, 0, 0, 0);
 
-    
     const promo = await PromoCode.findOne({
       promo_code: formattedCode,
-      user_id: objectId,
-      expiry_date: { $gte: today } // Not expired
+      expiry_date: { $gte: today },
+      $or: [
+        { user_id: objectId },         // private promo
+        { is_public: true },           // public promo
+      ],
     });
 
     if (!promo) {
       return res.status(404).json({ message: "Promo code is invalid or expired" });
+    }
+
+    // check if public promo already used by this user
+    if (promo.is_public && promo.used_by.includes(objectId)) {
+      return res.status(400).json({ message: "You have already used this promo code." });
     }
 
     return res.status(200).json({
@@ -57,6 +64,7 @@ export const validatePromoCode = async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
 
 
 export const checkout = async (req, res) => {
@@ -82,16 +90,27 @@ export const checkout = async (req, res) => {
     }, 0);
 
     let discount = 0;
+    let promo = null;
+
     if (promo_code && promo_code.trim() !== "") {
-      const promo = await PromoCode.findOne({
-        user_id,
-        promo_code: promo_code.trim().toUpperCase(),
+      const formattedCode = promo_code.trim().toUpperCase();
+      promo = await PromoCode.findOne({
+        promo_code: formattedCode,
         expiry_date: { $gte: new Date() },
+        $or: [
+          { user_id },
+          { is_public: true }
+        ],
       });
 
       if (!promo) {
         return res.status(400).json({ message: "Invalid or expired promo code." });
       }
+
+      if (promo.is_public && promo.used_by.includes(user_id)) {
+        return res.status(400).json({ message: "Promo code already used." });
+      }
+
       discount = promo.discount;
     }
 
@@ -199,12 +218,21 @@ export const checkout = async (req, res) => {
       price: item.variant_id?.price || item.product_id.price,
     })));
     
-    if (promo_code && discount > 0) {
+      if (promo_code && promo && discount > 0) {
+    if (promo.is_public) {
+      // Push user ID to used_by array
+      await PromoCode.updateOne(
+        { _id: promo._id },
+        { $addToSet: { used_by: user_id } }
+      );
+    } else {
+      // Delete private (birthday) promo after use
       await PromoCode.deleteOne({
-        user_id,
-        promo_code: promo_code.trim().toUpperCase()
+        _id: promo._id
       });
     }
+  }
+
 
       
     await CartItem.deleteMany({ _id: { $in: cart.items.map(i => i._id) } });
@@ -304,3 +332,4 @@ export const getUserOrders = async (req, res) => {
     res.status(500).json({ message: 'Error retrieving orders.', error });
   }
 };
+

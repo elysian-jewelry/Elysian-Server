@@ -7,7 +7,7 @@ const promoCodeSchema = new mongoose.Schema(
     user_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
     },
     promo_code: {
       type: String,
@@ -23,6 +23,16 @@ const promoCodeSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+     is_public: {
+      type: Boolean,
+      default: false, // birthday codes default to private
+    },
+    used_by: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      }
+    ]
   },
   {
     collection: "promo_codes",

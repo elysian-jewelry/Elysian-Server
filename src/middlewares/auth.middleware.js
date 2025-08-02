@@ -25,7 +25,9 @@ const excludedPaths = [
   "/upload-product-images",
   "/admin/products/swap-order",
   "/admin/products/set-primary-image",
-  "/public"
+  "/public",
+  "/admin/update-sort-order",
+  "/admin/create-public"
 ];
 
 export const authenticateJWT = (req, res, next) => {
