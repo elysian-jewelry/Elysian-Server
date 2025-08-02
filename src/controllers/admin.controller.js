@@ -186,7 +186,6 @@ export const updateProductQuantity = async (req, res) => {
 };
 
 
-// Create a new public promo code
 export const createPublicPromo = async (req, res) => {
   try {
     const { promo_code, discount, expiry_date } = req.body;
@@ -196,6 +195,11 @@ export const createPublicPromo = async (req, res) => {
     }
 
     const formattedCode = promo_code.trim().toUpperCase();
+
+    // ✅ Enforce exactly 6 characters
+    if (formattedCode.length !== 6) {
+      return res.status(400).json({ message: "Promo code must be exactly 6 characters long." });
+    }
 
     const existing = await PromoCode.findOne({ promo_code: formattedCode });
     if (existing) {
