@@ -71,7 +71,7 @@ export const checkout = async (req, res) => {
   try {
     const user_id = req.user.user_id;
     const { address, apartment_no, city, governorate, phone_number, promo_code, first_name, last_name } = req.body;
-
+    
     const cart = await Cart.findOne({ user_id }).populate({
       path: "items",
       populate: [
@@ -168,8 +168,8 @@ export const checkout = async (req, res) => {
       order_id: order._id,
       product_id: item.product_id._id,
       variant_id: item.variant_id?._id || null,
-      size: item.variant_id?.size || null,
-      color: item.variant_id?.color || null,
+      size: item.variant_id?.size || item.size || null,
+      color: item.variant_id?.color || item.color || null,
       quantity: item.quantity,
       price: item.variant_id?.price || item.product_id.price,
     }));
@@ -195,8 +195,8 @@ export const checkout = async (req, res) => {
       item.product_id.type,
       item.product_id.name,
       item.quantity,
-      item.variant_id?.size || null,
-      item.variant_id?.color || null,
+      item.variant_id?.size || item.size || null,
+      item.variant_id?.color || item.color || null,
       `${address}, ${apartment_no}, ${city}, ${governorateName}`,
       phone_number,
       'Pending',
