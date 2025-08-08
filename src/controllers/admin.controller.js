@@ -1,12 +1,9 @@
 import Product from "../models/product.js";
 import User from "../models/user.js";
 import Order from "../models/order.js";
+import OrderItem from "../models/orderItem.js";
 import ProductVariant from "../models/productVariant.js";
 import PromoCode from "../models/promoCode.js";
-
-const baseFolder = "C:/Users/samir/Documents/Elysian-Client/public/assets/Images";
-const baseURL = "https://elysianjewelry.store/assets/images";
-const necklacesBaseURL = "https://elysian-images.netlify.app/assets/images"; // Different URL for Necklaces
 
 
 export const updateProductSortOrder = async (req, res) => {
@@ -117,46 +114,105 @@ export const addProductWithVariants = async (req, res) => {
   }
 };
 
-export const getAllUsersWithOrderStats = async (req, res) => {
+export const getAllOrdersFull = async (req, res) => {
   try {
-    // Step 1: Get user count
-    const totalUsers = await User.countDocuments();
+    const ORDER_ITEMS_COLL = OrderItem.collection.name; // "order_items"
+    const USERS_COLL = User.collection.name;            // "users"
+    const PRODUCTS_COLL = Product.collection.name;      // "products"
 
-    // Step 2: Aggregate orders per user
-    const ordersPerUser = await Order.aggregate([
+    const pipeline = [
+      { $sort: { order_date: -1, _id: -1 } },
+
+      // Join user
       {
-        $group: {
-          _id: "$user_id",
-          orderCount: { $sum: 1 }
+        $lookup: {
+          from: USERS_COLL,
+          localField: "user_id",
+          foreignField: "_id",
+          as: "user"
+        }
+      },
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+
+      // Join order items with product details
+      {
+        $lookup: {
+          from: ORDER_ITEMS_COLL,
+          let: { orderId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$order_id", "$$orderId"] } } },
+
+            // ✅ Join product name & type
+            {
+              $lookup: {
+                from: PRODUCTS_COLL,
+                localField: "product_id",
+                foreignField: "_id",
+                as: "product"
+              }
+            },
+            { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+
+            // Only keep relevant product info
+            {
+              $addFields: {
+                product_name: "$product.name",
+                product_type: "$product.type"
+              }
+            },
+            { $project: { product: 0 } } // remove full product doc if not needed
+          ],
+          as: "items"
+        }
+      },
+
+      {
+        $project: {
+          _id: 1,
+          user_id: 1,
+          order_date: 1,
+          subtotal: 1,
+          discount_percent: 1,
+          total_amount: 1,
+          shipping_cost: 1,
+          address: 1,
+          apartment_no: 1,
+          city: 1,
+          governorate: 1,
+          phone_number: 1,
+          status: 1,
+          items: 1,
+          user: {
+            _id: 1,
+            email: 1,
+            first_name: 1,
+            last_name: 1,
+            birthday: 1,
+            created_at: 1,
+            updated_at: 1
+          }
         }
       }
-    ]);
+    ];
 
-    // Step 3: Calculate total orders
-    const totalOrders = ordersPerUser.reduce((sum, entry) => sum + entry.orderCount, 0);
+    let orders = await Order.aggregate(pipeline);
 
-    // Step 4: Map order counts by user_id for quick lookup
-    const orderMap = {};
-    ordersPerUser.forEach(entry => {
-      orderMap[entry._id.toString()] = entry.orderCount;
-    });
-
-    // Step 5: Get all users and append order count
-    const users = await User.find().lean(); // use .lean() to get plain objects
-
-    const usersWithOrders = users.map(user => ({
-      ...user,
-      orderCount: orderMap[user._id.toString()] || 0
+    // Convert Decimal128 prices to numbers
+    orders = orders.map(o => ({
+      ...o,
+      items: o.items.map(it => ({
+        ...it,
+        price: it?.price ? Number(it.price) : it.price
+      }))
     }));
 
-    res.status(200).json({
-      totalUsers,
-      totalOrders,
-      users: usersWithOrders
+    return res.status(200).json({
+      count: orders.length,
+      orders
     });
   } catch (error) {
-    console.error("Error fetching users with order stats:", error);
-    res.status(500).json({ message: "Internal server error", error });
+    console.error("Error fetching all orders with details:", error);
+    return res.status(500).json({ message: "Internal server error", error });
   }
 };
 
