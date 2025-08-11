@@ -6,6 +6,31 @@ import ProductVariant from "../models/productVariant.js";
 import PromoCode from "../models/promoCode.js";
 
 
+export const getAllUsersLatest = async (req, res) => {
+  try {
+    const pipeline = [
+      // Prefer created_at; fallback to createdAt; if both missing, sort by _id as tie-breaker
+      { $addFields: { __sortCreated: { $ifNull: ["$created_at", "$createdAt"] } } },
+      { $sort: { __sortCreated: -1, _id: -1 } },
+      // Hide sensitive/internal fields
+      { $project: { password: 0, __v: 0 } },
+    ];
+
+    const [users, totalUsers] = await Promise.all([
+      User.aggregate(pipeline),
+      User.countDocuments()
+    ]);
+
+    return res.status(200).json({
+      count: totalUsers,
+      users
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    return res.status(500).json({ message: "Internal server error", error });
+  }
+};
+
 export const updateProductSortOrder = async (req, res) => {
   const { category, orderedNames } = req.body;
 

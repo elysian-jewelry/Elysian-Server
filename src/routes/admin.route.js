@@ -1,5 +1,5 @@
 import express from "express";
-import { updateProductQuantity, createPublicPromo, updateProductSortOrder, getAllOrdersFull, addProductWithVariants } from "../controllers/admin.controller.js";
+import { getAllUsersLatest, updateProductQuantity, createPublicPromo, updateProductSortOrder, getAllOrdersFull, addProductWithVariants } from "../controllers/admin.controller.js";
 
 const router = express.Router();
 
@@ -16,5 +16,9 @@ router.get("/admin/users-with-orders", getAllOrdersFull);
 router.post("/admin/add-product", addProductWithVariants);
 
 router.post("/admin/create-public-promocode", createPublicPromo);
+
+
+// ✅ New route
+router.get("/admin/users", getAllUsersLatest);
 
 export default router;

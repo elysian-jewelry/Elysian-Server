@@ -11,7 +11,6 @@ router.post("/update/google-sheet", updateGoogleSheet);
 
 router.post('/validate', validatePromoCode);
 
-
 router.post("/checkout", validate(checkoutSchema), checkout);
 
 router.get("/user/orders", getUserOrders);
