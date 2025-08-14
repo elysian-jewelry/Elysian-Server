@@ -5,11 +5,21 @@ dotenv.config();
 import nodemailer from 'nodemailer';
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,            // STARTTLS port
+  secure: false,        // STARTTLS instead of direct SSL
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: process.env.EMAIL_USER,   // Gmail address
+    pass: process.env.EMAIL_PASS,   // 16-char Gmail App Password
   },
+  requireTLS: true,                 // force encryption
+  connectionTimeout: 20000,         // 20s to connect
+  greetingTimeout: 15000,           // 15s to wait for server greeting
+  socketTimeout: 30000,             // 30s of inactivity before disconnect
+  pool: true,                        // reuse connections
+  maxConnections: 3,                 // max concurrent connections
+  rateDelta: 60000,                   // rate limit window (1 min)
+  rateLimit: 60,                      // max emails per window
 });
 
 export const sendVerificationCodeEmail = async (email, verificationCode) => {
@@ -214,9 +224,59 @@ export const sendBirthdayPromoCodeEmail = async (user, promoCode) => {
 
 
 
+// in middlewares/mailer.middleware.js
+export const sendMissingBirthdayEmail = async (user) => {
+  const { first_name, last_name, email } = user || {};
+  const displayName = first_name && last_name ? `${first_name} ${last_name}` : (first_name || last_name || '');
 
+  const profileLink = 'https://elysianjewelry.store/'; // homepage; update to /account/profile if you have a direct profile URL
 
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: "Don’t miss your 20% Birthday Gift 🎁 | Elysian Jewelry",
+    html: `
+      <div style="font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #fff; color: #111; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #ffc9dc; border-radius: 12px;">
+        <h2 style="color: #ff4d88; text-align: center;">
+          Keep the sparkle, ${displayName ? displayName : 'elysian girlies'} ✨
+        </h2>
 
+        <p style="font-size: 16px; margin-top: 15px;">
+          We love celebrating you! Add your birthdate so you don't miss your
+          <strong>exclusive 20% OFF</strong> code on your special day.
+        </p>
+
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${profileLink}" style="display:inline-block; font-size: 16px; font-weight: 600; color: #fff; background-color: #ff4d88; padding: 12px 24px; border-radius: 10px; text-decoration: none;">
+            Update your birthdate
+          </a>
+        </div>
+
+        <p style="font-size: 14px; margin-top: 8px; text-align: center;">
+          It only takes a moment, then we’ll send you a <strong>20% OFF</strong> gift on your birthday 🎂
+        </p>
+
+        <p style="margin-top: 30px;">
+          With sparkle and love ✨<br/>
+          <strong style="color: #ff4d88;">The Elysian Jewelry Team</strong>
+        </p>
+
+        <hr style="margin-top: 40px; border: none; border-top: 1px solid #ffc9dc;">
+
+        <p style="font-size: 12px; color: #888; text-align: center;">
+          This is an automated message. Please do not reply.
+        </p>
+      </div>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+  } catch (error) {
+    console.error("Error sending missing birthday email:", error);
+    throw new Error("Error sending missing birthday email");
+  }
+};
 
 
 
