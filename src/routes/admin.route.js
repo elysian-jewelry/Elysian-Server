@@ -1,6 +1,9 @@
 import express from "express";
 import { getAllUsersLatest, updateProductQuantity, createPublicPromo, updateProductSortOrder, getAllOrdersFull, addProductWithVariants } from "../controllers/admin.controller.js";
 
+
+import { runMissingBirthdayReminder } from "../controllers/cron.controller.js"; // ✅ import
+
 const router = express.Router();
 
 // Update product quantity by name and type
@@ -20,5 +23,15 @@ router.post("/admin/create-public-promocode", createPublicPromo);
 
 // ✅ New route
 router.get("/admin/users", getAllUsersLatest);
+
+// 🚀 New manual trigger route
+router.post("/admin/run-missing-birthday-cron", async (req, res) => {
+  try {
+    const result = await runMissingBirthdayReminder();
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 export default router;
