@@ -241,30 +241,50 @@ export const getAllOrdersFull = async (req, res) => {
   }
 };
 
-// Update stock quantity for a product by name and type (Mongoose version)
 export const updateProductQuantity = async (req, res) => {
   const { name, type, quantity } = req.body;
 
-  if (!name || !type || typeof quantity !== "number") {
-    return res.status(400).json({ message: "name, type, and quantity (number) are required." });
+  if (!name || !type || typeof quantity !== "number" || !Number.isFinite(quantity)) {
+    return res.status(400).json({
+      message: "name, type, and quantity (finite number) are required.",
+    });
   }
 
   try {
+    // 1) Find product
     const product = await Product.findOne({ name, type });
-
     if (!product) {
       return res.status(404).json({ message: "Product not found." });
     }
 
+    // 2) Update product stock
     product.stock_quantity = quantity;
     await product.save();
 
-    res.status(200).json({ message: "Stock quantity updated successfully.", product });
+    // 3) Update all variants (if any) to the same quantity
+    const variantUpdateResult = await ProductVariant.updateMany(
+      { product_id: product._id },
+      { $set: { stock_quantity: quantity } }
+    );
+
+    // 4) (Optional) fetch variants if you want to return them
+    const variants =
+      variantUpdateResult.matchedCount > 0
+        ? await ProductVariant.find({ product_id: product._id })
+        : [];
+
+    return res.status(200).json({
+      message: "Stock quantity updated successfully.",
+      product,
+      variants,
+      variants_modified: variantUpdateResult.modifiedCount || 0,
+    });
   } catch (error) {
     console.error("Error updating product quantity:", error);
-    res.status(500).json({ message: "Internal server error", error });
+    return res.status(500).json({ message: "Internal server error", error });
   }
 };
+
 
 
 export const createPublicPromo = async (req, res) => {
