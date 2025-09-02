@@ -265,7 +265,7 @@ export const updateGoogleSheet = async (sheetData) => {
     const response = await sheets.spreadsheets.values.append({
       spreadsheetId,
       range,
-      valueInputOption: 'RAW',
+      valueInputOption: 'USER_ENTERED',
       resource,
     });
 
