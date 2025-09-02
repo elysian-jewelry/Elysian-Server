@@ -150,6 +150,8 @@ export const checkout = async (req, res) => {
     const governorateName = shippingData.name;
 
     const total_amount = subtotal - (subtotal * (discount / 100)) + shipping_cost;
+    const subtotalInt = Math.round(subtotal);
+    const totalInt = Math.round(total_amount);
 
     const order = await Order.create({
       user_id,
@@ -200,9 +202,9 @@ export const checkout = async (req, res) => {
       `${address}, ${apartment_no}, ${city}, ${governorateName}`,
       phone_number,
       'Pending',
-      total_amount.toFixed(2),
+      totalInt,
       `${discount}%`,
-      subtotal.toFixed(2),
+      subtotalInt,
       shipping_cost,
       new Date().toLocaleString()
     ]);
