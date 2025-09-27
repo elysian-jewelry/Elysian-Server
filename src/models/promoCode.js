@@ -36,7 +36,7 @@ const promoCodeSchema = new mongoose.Schema(
   },
   {
     collection: "promo_codes",
-    timestamps: false,
+    timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
   }
 );
 

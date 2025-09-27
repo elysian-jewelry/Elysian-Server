@@ -215,8 +215,8 @@ export const checkout = async (req, res) => {
       name: item.product_id.name,
       type: item.product_id.type,
       quantity: item.quantity,
-      size: item.variant_id?.size || null,
-      color: item.variant_id?.color || null,
+      size: item.variant_id?.size || item.size || null,
+      color: item.variant_id?.color || item.color || null,
       price: item.variant_id?.price || item.product_id.price,
     })));
     
