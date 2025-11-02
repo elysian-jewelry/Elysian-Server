@@ -325,3 +325,118 @@ export const createPublicPromo = async (req, res) => {
   }
 };
 
+
+
+// --- NEW: Monthly order totals with grand total ---
+export const getMonthlyOrderTotals = async (req, res) => {
+  try {
+    // Query params (all optional)
+    const now = new Date();
+    const year = parseInt(req.query.year ?? now.getFullYear(), 10);
+    const tz = req.query.tz || "Africa/Cairo"; // your default
+    // status can be: "all" to include everything, or a CSV like "Pending,Shipped"
+    // default excludes Cancelled
+    const statusParam = (req.query.status || "exclude-cancelled").trim().toLowerCase();
+
+    const start = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
+    const end = new Date(Date.UTC(year + 1, 0, 1, 0, 0, 0));
+
+    // Build match stage
+    const match = {
+      order_date: { $gte: start, $lt: end },
+    };
+
+    if (statusParam !== "all") {
+      if (statusParam === "exclude-cancelled") {
+        match.status = { $ne: "Cancelled" };
+      } else {
+        const statuses = statusParam
+          .split(",")
+          .map(s => s.trim())
+          .filter(Boolean);
+        if (statuses.length) match.status = { $in: statuses };
+      }
+    }
+
+    const pipeline = [
+      { $match: match },
+
+      // Normalize numeric fields if needed (they are Numbers in your schema already, but safe cast)
+      {
+        $addFields: {
+          _total: { $toDouble: "$total_amount" },
+          _subtotal: { $toDouble: "$subtotal" },
+          _shipping: { $toDouble: "$shipping_cost" },
+        }
+      },
+
+      // Truncate to month in the given time zone
+      {
+        $addFields: {
+          monthBucket: {
+            $dateTrunc: {
+              date: "$order_date",
+              unit: "month",
+              timezone: tz
+            }
+          }
+        }
+      },
+
+      // Use a facet so we get both monthly and grand totals in one pass
+      {
+        $facet: {
+          monthly: [
+            {
+              $group: {
+                _id: "$monthBucket",
+                orders: { $sum: 1 },
+                total_amount: { $sum: "$_total" },
+                subtotal: { $sum: "$_subtotal" },
+                shipping_cost: { $sum: "$_shipping" },
+              }
+            },
+            { $sort: { _id: 1 } },
+            // Pretty month label like "2025-01"
+            {
+              $addFields: {
+                month: {
+                  $dateToString: { date: "$_id", format: "%Y-%m", timezone: tz }
+                }
+              }
+            },
+            { $project: { _id: 0 } }
+          ],
+
+          grand: [
+            {
+              $group: {
+                _id: null,
+                orders: { $sum: 1 },
+                total_amount: { $sum: "$_total" },
+                subtotal: { $sum: "$_subtotal" },
+                shipping_cost: { $sum: "$_shipping" },
+              }
+            },
+            { $project: { _id: 0 } }
+          ]
+        }
+      }
+    ];
+
+    const [result] = await Order.aggregate(pipeline);
+    const monthly = result.monthly || [];
+    const grand = (result.grand && result.grand[0]) || { orders: 0, total_amount: 0, subtotal: 0, shipping_cost: 0 };
+
+    return res.status(200).json({
+      year,
+      timezone: tz,
+      status_filter: statusParam,
+      monthly,    // [{ month: "2025-01", orders: N, total_amount: X, subtotal: Y, shipping_cost: Z }, ...]
+      grand       // { orders, total_amount, subtotal, shipping_cost }
+    });
+  } catch (error) {
+    console.error("Error aggregating monthly order totals:", error);
+    return res.status(500).json({ message: "Internal server error", error });
+  }
+};

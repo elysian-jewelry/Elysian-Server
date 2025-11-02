@@ -24,7 +24,8 @@ const excludedPaths = [
   "/public",
   "/admin/create-public",
   "/admin/users",
-  "/admin/run-missing-birthday-cron"
+  "/admin/run-missing-birthday-cron",
+  "/admin/orders/stats/monthly",
 ];
 
 export const authenticateJWT = (req, res, next) => {
