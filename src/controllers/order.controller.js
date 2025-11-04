@@ -1,4 +1,4 @@
-import { google } from 'googleapis';
+import { google } from "googleapis";
 import Order from "../models/order.js";
 import OrderItem from "../models/orderItem.js";
 import Cart from "../models/cart.js";
@@ -7,19 +7,41 @@ import Product from "../models/product.js";
 import ProductVariant from "../models/productVariant.js";
 import ProductImage from "../models/productImage.js";
 import PromoCode from "../models/promoCode.js";
-import { Op } from "sequelize";
-import { sendOrderConfirmationEmail } from '../middlewares/mailer.middleware.js';
-import mongoose from "mongoose";
-import dotenv from 'dotenv';
-dotenv.config();
 
+import GovOrderRate from "../models/govOrderRate.js";
+import { Op } from "sequelize";
+import { sendOrderConfirmationEmail } from "../middlewares/mailer.middleware.js";
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+dotenv.config();
 
 // Load your service account key
 const auth = new google.auth.GoogleAuth({
-  keyFile: './credentials.json', // Replace with your JSON file
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  keyFile: "./credentials.json", // Replace with your JSON file
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
+/**
+ * GET /public/governorates
+ * Returns: [{ id, name, cost }, ...]
+ */
+export const listGovernorates = async (_req, res) => {
+  try {
+    const docs = await GovOrderRate.find({}, { name: 1, cost: 1 })
+      .sort({ _id: 1 }) // ascending by id
+      .lean();
+
+    const governorates = docs.map((d) => ({
+      id: d._id, // expose numeric id
+      name: d.name,
+      cost: d.cost,
+    }));
+
+    res.status(200).json({ count: governorates.length, governorates });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
 
 // POST /api/promo/validate
 export const validatePromoCode = async (req, res) => {
@@ -40,38 +62,48 @@ export const validatePromoCode = async (req, res) => {
       promo_code: formattedCode,
       expiry_date: { $gte: today },
       $or: [
-        { user_id: objectId },         // private promo
-        { is_public: true },           // public promo
+        { user_id: objectId }, // private promo
+        { is_public: true }, // public promo
       ],
     });
 
     if (!promo) {
-      return res.status(404).json({ message: "Promo code is invalid or expired" });
+      return res
+        .status(404)
+        .json({ message: "Promo code is invalid or expired" });
     }
 
     // check if public promo already used by this user
     if (promo.is_public && promo.used_by.includes(objectId)) {
-      return res.status(400).json({ message: "You have already used this promo code." });
+      return res
+        .status(400)
+        .json({ message: "You have already used this promo code." });
     }
 
     return res.status(200).json({
       message: "Promo code is valid",
-      discount: promo.discount
+      discount: promo.discount,
     });
-
   } catch (error) {
     console.error("Error validating promo code:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
 
-
-
 export const checkout = async (req, res) => {
   try {
     const user_id = req.user.user_id;
-    const { address, apartment_no, city, governorate, phone_number, promo_code, first_name, last_name } = req.body;
-    
+    const {
+      address,
+      apartment_no,
+      city,
+      governorate,
+      phone_number,
+      promo_code,
+      first_name,
+      last_name,
+    } = req.body;
+
     const cart = await Cart.findOne({ user_id }).populate({
       path: "items",
       populate: [
@@ -85,7 +117,9 @@ export const checkout = async (req, res) => {
     }
 
     const subtotal = cart.items.reduce((sum, item) => {
-      const price = item.variant_id ? parseFloat(item.variant_id.price) : parseFloat(item.product_id.price);
+      const price = item.variant_id
+        ? parseFloat(item.variant_id.price)
+        : parseFloat(item.product_id.price);
       return sum + price * item.quantity;
     }, 0);
 
@@ -97,14 +131,13 @@ export const checkout = async (req, res) => {
       promo = await PromoCode.findOne({
         promo_code: formattedCode,
         expiry_date: { $gte: new Date() },
-        $or: [
-          { user_id },
-          { is_public: true }
-        ],
+        $or: [{ user_id }, { is_public: true }],
       });
 
       if (!promo) {
-        return res.status(400).json({ message: "Invalid or expired promo code." });
+        return res
+          .status(400)
+          .json({ message: "Invalid or expired promo code." });
       }
 
       if (promo.is_public && promo.used_by.includes(user_id)) {
@@ -114,42 +147,29 @@ export const checkout = async (req, res) => {
       discount = promo.discount;
     }
 
-    const shippingRates = [
-      { id: 1, name: "Cairo", cost: 80 },
-      { id: 2, name: "Giza", cost: 80 },
-      { id: 3, name: "Sharqia", cost: 90 },
-      { id: 4, name: "Dakahlia", cost: 90 },
-      { id: 5, name: "Beheira", cost: 110 },
-      { id: 6, name: "Minya", cost: 110 },
-      { id: 7, name: "Qalyubia", cost: 90 },
-      { id: 8, name: "Sohag", cost: 110 },
-      { id: 9, name: "Fayoum", cost: 90 },
-      { id: 10, name: "Assiut", cost: 110 },
-      { id: 11, name: "Monufia", cost: 90 },
-      { id: 12, name: "Alexandria", cost: 90 },
-      { id: 13, name: "Gharbia", cost: 90 },
-      { id: 14, name: "Kafr El Sheikh", cost: 90 },
-      { id: 15, name: "Bani Suef", cost: 110 },
-      { id: 16, name: "Qena", cost: 90 },
-      { id: 17, name: "Aswan", cost: 120 },
-      { id: 18, name: "Damietta", cost: 90 },
-      { id: 19, name: "Ismailia", cost: 90 },
-      { id: 20, name: "Matrouh", cost: 120 },
-      { id: 21, name: "Luxor", cost: 120 },
-      { id: 22, name: "Port Said", cost: 90 },
-      { id: 23, name: "Red Sea", cost: 120 },
-      { id: 24, name: "South Sinai", cost: 140 },
-      { id: 25, name: "New Valley", cost: 140 },
-      { id: 26, name: "North Coast", cost: 125 },
-    ];
+    // --- fetch shipping cost by governorate id from DB ---
+    const govId = Number(governorate);
+    if (!Number.isFinite(govId)) {
+      return res
+        .status(400)
+        .json({ message: "Governorate ID must be a number." });
+    }
 
-    const shippingData = shippingRates.find(e => e.id === Number(governorate));
-    if (!shippingData) return res.status(400).json({ message: "Invalid governorate ID." });
+    // Only grab what we need
+    const govRate = await GovOrderRate.findById(govId, {
+      name: 1,
+      cost: 1,
+    }).lean();
 
-    const shipping_cost = shippingData.cost;
-    const governorateName = shippingData.name;
+    if (!govRate) {
+      return res.status(400).json({ message: "Invalid governorate ID." });
+    }
 
-    const total_amount = subtotal - (subtotal * (discount / 100)) + shipping_cost;
+    const shipping_cost = govRate.cost;
+    const governorateName = govRate.name;
+
+
+    const total_amount = subtotal - subtotal * (discount / 100) + shipping_cost;
     const subtotalInt = Math.round(subtotal);
     const totalInt = Math.round(total_amount);
 
@@ -166,7 +186,7 @@ export const checkout = async (req, res) => {
       phone_number,
     });
 
-    const orderItems = cart.items.map(item => ({
+    const orderItems = cart.items.map((item) => ({
       order_id: order._id,
       product_id: item.product_id._id,
       variant_id: item.variant_id?._id || null,
@@ -188,10 +208,9 @@ export const checkout = async (req, res) => {
       }
     }
 
-    const shortOrderId = order._id.toString().slice(-5);  // e.g., 'bb3f0'
+    const shortOrderId = order._id.toString().slice(-5); // e.g., 'bb3f0'
 
-
-    const sheetData = cart.items.map(item => [
+    const sheetData = cart.items.map((item) => [
       shortOrderId,
       `${first_name} ${last_name}`,
       item.product_id.type,
@@ -201,81 +220,87 @@ export const checkout = async (req, res) => {
       item.variant_id?.color || item.color || null,
       `${address}, ${apartment_no}, ${city}, ${governorateName}`,
       phone_number,
-      'Pending',
+      "Pending",
       totalInt,
       `${discount}%`,
       subtotalInt,
       shipping_cost,
-      new Date().toLocaleString()
+      new Date().toLocaleString(),
     ]);
 
     await updateGoogleSheet(sheetData);
 
-    await sendOrderConfirmationEmail(req.user.email, first_name, last_name, `${address}, ${apartment_no}, ${city}, ${governorateName}`, discount, subtotal, shipping_cost, order, cart.items.map(item => ({
-      name: item.product_id.name,
-      type: item.product_id.type,
-      quantity: item.quantity,
-      size: item.variant_id?.size || item.size || null,
-      color: item.variant_id?.color || item.color || null,
-      price: item.variant_id?.price || item.product_id.price,
-    })));
-    
-      if (promo_code && promo && discount > 0) {
-    if (promo.is_public) {
-      // Push user ID to used_by array
-      await PromoCode.updateOne(
-        { _id: promo._id },
-        { $addToSet: { used_by: user_id } }
-      );
-    } else {
-      // Delete private (birthday) promo after use
-      await PromoCode.deleteOne({
-        _id: promo._id
-      });
+    await sendOrderConfirmationEmail(
+      req.user.email,
+      first_name,
+      last_name,
+      `${address}, ${apartment_no}, ${city}, ${governorateName}`,
+      discount,
+      subtotal,
+      shipping_cost,
+      order,
+      cart.items.map((item) => ({
+        name: item.product_id.name,
+        type: item.product_id.type,
+        quantity: item.quantity,
+        size: item.variant_id?.size || item.size || null,
+        color: item.variant_id?.color || item.color || null,
+        price: item.variant_id?.price || item.product_id.price,
+      }))
+    );
+
+    if (promo_code && promo && discount > 0) {
+      if (promo.is_public) {
+        // Push user ID to used_by array
+        await PromoCode.updateOne(
+          { _id: promo._id },
+          { $addToSet: { used_by: user_id } }
+        );
+      } else {
+        // Delete private (birthday) promo after use
+        await PromoCode.deleteOne({
+          _id: promo._id,
+        });
+      }
     }
-  }
 
-
-      
-    await CartItem.deleteMany({ _id: { $in: cart.items.map(i => i._id) } });
+    await CartItem.deleteMany({ _id: { $in: cart.items.map((i) => i._id) } });
     cart.items = [];
     cart.total_price = 0;
     await cart.save();
 
-
-    return res.status(201).json({ message: "Order placed successfully.", order });
-
+    return res
+      .status(201)
+      .json({ message: "Order placed successfully.", order });
   } catch (error) {
     console.error("❌ Checkout Error:", error);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
-
 export const updateGoogleSheet = async (sheetData) => {
   try {
     const authClient = await auth.getClient();
-    const sheets = google.sheets({ version: 'v4', auth: authClient });
+    const sheets = google.sheets({ version: "v4", auth: authClient });
 
     const spreadsheetId = process.env.GOOGLE_SPREAD_SHEET_ID; // from .env file
-    const range = 'Sheet1!A2:N';  // Adjust the range to start from row 2 downwards
+    const range = "Sheet1!A2:N"; // Adjust the range to start from row 2 downwards
 
     const resource = { values: sheetData };
 
     const response = await sheets.spreadsheets.values.append({
       spreadsheetId,
       range,
-      valueInputOption: 'USER_ENTERED',
+      valueInputOption: "USER_ENTERED",
       resource,
     });
 
     return response.data;
   } catch (error) {
-    console.error('❌ Error updating sheet:', error);
-    throw new Error('Error updating Google Sheets');
+    console.error("❌ Error updating sheet:", error);
+    throw new Error("Error updating Google Sheets");
   }
 };
-
 
 export const getUserOrders = async (req, res) => {
   const user_id = req.user.user_id;
@@ -286,18 +311,20 @@ export const getUserOrders = async (req, res) => {
       .lean();
 
     if (!orders.length) {
-      return res.status(404).json({ message: 'No orders found for this user.' });
+      return res
+        .status(404)
+        .json({ message: "No orders found for this user." });
     }
 
-    const orderIds = orders.map(order => order._id);
+    const orderIds = orders.map((order) => order._id);
     const orderItems = await OrderItem.find({ order_id: { $in: orderIds } })
       .populate({
-        path: 'product_id',
-        select: 'name images',
+        path: "product_id",
+        select: "name images",
         populate: {
-          path: 'images',
+          path: "images",
           match: { is_primary: true },
-          select: 'image_url',
+          select: "image_url",
         },
       })
       .lean();
@@ -331,7 +358,6 @@ export const getUserOrders = async (req, res) => {
     res.status(200).json(formattedOrders);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Error retrieving orders.', error });
+    res.status(500).json({ message: "Error retrieving orders.", error });
   }
 };
-

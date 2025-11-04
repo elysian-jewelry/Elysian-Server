@@ -1,11 +1,10 @@
 import express from "express";
 import { getAllUsersLatest, updateProductQuantity, createPublicPromo, updateProductSortOrder, getAllOrdersFull, addProductWithVariants, getMonthlyOrderTotals } from "../controllers/admin.controller.js";
-
-
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js"; // ✅ import
 
 const router = express.Router();
-// ...
+
+
 router.get("/admin/orders/stats/monthly", getMonthlyOrderTotals);
 
 // Update product quantity by name and type
