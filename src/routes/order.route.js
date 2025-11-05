@@ -7,7 +7,7 @@ import { validate } from "../middlewares/validation.middleware.js";
 const router = express.Router();
 
 // Public endpoint to fetch all governorates with id/name/cost
-router.get("/get/governorates/rates", listGovernorates);
+router.get("/governorates/rates", listGovernorates);
 // Add product to cart
 router.post("/update/google-sheet", updateGoogleSheet);
 
