@@ -5,7 +5,6 @@ import initializeRoutes from "./routes/routes.js";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
-import sequelize from "./config/database.js";
 import { authenticateJWT } from "./middlewares/auth.middleware.js";
 import { connectToMongoDB } from "./config/mongodb.js";
 
@@ -31,8 +30,6 @@ class App {
   initializeMiddlewares() {
     this.app.use(cors());
     this.app.use(express.json());
-    // Serve only the images folder at /images
-    // Serve only the images folder at /images
     this.app.use(
       "/images",
       express.static(path.join(this.__dirname, "images"))

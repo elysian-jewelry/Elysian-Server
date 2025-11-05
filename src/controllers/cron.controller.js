@@ -57,8 +57,6 @@ export const birthdayPromoCron = () => {
 };
 
 
-
-
 // Core function: run missing birthday reminder logic
 export const runMissingBirthdayReminder = async () => {
   try {
@@ -94,50 +92,6 @@ export const runMissingBirthdayReminder = async () => {
 // Cron wrapper (runs every Friday 18:00 Cairo time)
 export const missingBirthdayReminderCron = () => {
   cron.schedule('0 18 * * 5', runMissingBirthdayReminder, {
-    timezone: 'Africa/Cairo'
-  });
-};
-
-
-
-export const missingBirthdayReminderCronTest = () => {
-  // Instead of Friday 6PM, run every minute for testing
-  cron.schedule('43 23 * * *', async () => {
-    try {
-      // 🔹 Your test email list
-      const testEmails = [
-        'mennamohamedomar89@icloud.com',
-        'shadennwaleedd@yahoo.com',
-        'nosaya2008@icloud.com',
-        'alyahamada9@gmail.com',
-        'karma.mansour302@gmail.com',
-        'noufsaghier@gmail.com',
-        'samirelbatal0@gmail.com',
-      ];
-
-      // Fetch users by those emails
-      const users = await User.find({
-        email: { $in: testEmails }
-      }).select('email first_name last_name');
-
-      let sent = 0, failed = 0;
-    for (const user of users) {
-      if (!user?.email) continue;
-      try {
-        console.log('Sending:', user.email);
-        await sendMissingBirthdayEmail(user); // uses the transporter above
-        sent++;
-      } catch (e) {
-        failed++;
-        console.error(`❌ Failed for ${user.email}:`, e.code || e.message);
-      }
-    }
-    console.log(`✅ Sent: ${sent}, ❌ Failed: ${failed}`);
-
-    } catch (err) {
-      console.error('❌ Error running test missingBirthdayReminderCron:', err);
-    }
-  }, {
     timezone: 'Africa/Cairo'
   });
 };

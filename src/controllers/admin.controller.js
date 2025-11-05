@@ -4,6 +4,155 @@ import Order from "../models/order.js";
 import OrderItem from "../models/orderItem.js";
 import ProductVariant from "../models/productVariant.js";
 import PromoCode from "../models/promoCode.js";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
+import ProductImage from "../models/productImage.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Where images live (default: src/images)
+const IMAGES_ROOT =
+  process.env.IMAGES_DIR_ABS || path.join(__dirname, "..", "images");
+
+// Public base url (default to your prod API)
+const BASE_URL = (process.env.PUBLIC_BASE_URL || "https://elysian-api.oa.r.appspot.com").replace(/\/$/, "");
+
+// Allowed file extensions
+const ALLOWED = new Set([".webp", ".jpg", ".jpeg", ".png", ".gif"]);
+
+// Mirror your Product.type enum
+const PRODUCT_TYPES = new Set([
+  "Earrings",
+  "Necklaces",
+  "Bracelets",
+  "Hand Chains",
+  "Back Chains",
+  "Body Chains",
+  "Waist Chains",
+  "Sets",
+  "Bags",
+]);
+
+// Helpers
+function urlJoinEncoded(...parts) {
+  return parts
+    .filter(Boolean)
+    .map(p => p.split("/").map(encodeURIComponent).join("/"))
+    .join("/")
+    .replace(/\/{2,}/g, "/");
+}
+const looksPrimary = (f) =>
+  ["img_1", "main", "cover", "primary"].some(k => f.toLowerCase().includes(k));
+
+/**
+ * POST /admin/rebuild-product-images
+ * 1) DELETE ALL docs from product_images
+ * 2) Clear images array on all products
+ * 3) Scan disk, insert ALL images, set IMG_1 (or first) primary, and link to products
+ */
+export const rebuildAllProductImages = async (req, res) => {
+  const summary = {
+    imagesRoot: IMAGES_ROOT,
+    baseUrl: BASE_URL,
+    clearedProductImages: 0,
+    productsCleared: 0,
+    processedProducts: 0,
+    createdImages: 0,
+    updatedProducts: 0,
+    missingProducts: [],
+    skippedTypes: [],
+    errors: [],
+  };
+
+  try {
+    // Sanity: images root
+    const st = await fs.stat(IMAGES_ROOT).catch(() => null);
+    if (!st?.isDirectory()) {
+      return res.status(400).json({
+        success: false,
+        message: `Images root not found: ${IMAGES_ROOT}`,
+      });
+    }
+
+    // 1) Delete all from product_images
+    const delRes = await ProductImage.deleteMany({});
+    summary.clearedProductImages = delRes.deletedCount || 0;
+
+    // 2) Clear images array on all products
+    const clearRes = await Product.updateMany({}, { $set: { images: [] } });
+    summary.productsCleared = clearRes.modifiedCount || 0;
+
+    // 3) Walk folders: <images>/<Type>/<ProductName>/*
+    const typeDirs = await fs.readdir(IMAGES_ROOT, { withFileTypes: true });
+
+    for (const t of typeDirs) {
+      if (!t.isDirectory()) continue;
+      const typeName = t.name;
+      if (!PRODUCT_TYPES.has(typeName)) {
+        summary.skippedTypes.push(typeName);
+        continue;
+      }
+
+      const typePath = path.join(IMAGES_ROOT, typeName);
+      const productDirs = await fs.readdir(typePath, { withFileTypes: true });
+
+      for (const p of productDirs) {
+        if (!p.isDirectory()) continue;
+        const productName = p.name;
+        const productPath = path.join(typePath, productName);
+
+        // Find product by (name, type)
+        const product = await Product.findOne({ name: productName, type: typeName });
+        if (!product) {
+          summary.missingProducts.push(`${typeName} / ${productName}`);
+          continue;
+        }
+
+        // Collect image files
+        const entries = await fs.readdir(productPath, { withFileTypes: true });
+        const files = entries
+          .filter(e => e.isFile())
+          .map(e => e.name)
+          .filter(n => ALLOWED.has(path.extname(n).toLowerCase()))
+          .sort();
+
+        if (files.length === 0) continue;
+
+        const primaryFile = files.find(looksPrimary) || files[0];
+
+        // Build docs for insertMany
+        const toInsert = files.map((filename) => {
+          const rel = urlJoinEncoded("images", typeName, productName, filename);
+          const image_url = `${BASE_URL}/${rel}`;
+          return {
+            product_id: product._id,
+            image_url,
+            is_primary: filename === primaryFile,
+          };
+        });
+
+        // Insert all images for this product
+        const created = await ProductImage.insertMany(toInsert, { ordered: true });
+        summary.createdImages += created.length;
+
+        // Link back to product.images (replace entire array)
+        product.images = created.map(doc => doc._id);
+        await product.save();
+
+        summary.processedProducts += 1;
+        summary.updatedProducts += 1;
+      }
+    }
+
+    return res.status(200).json({ success: true, ...summary });
+  } catch (err) {
+    summary.errors.push(err.message);
+    return res.status(500).json({ success: false, ...summary });
+  }
+};
+
 
 
 export const getAllUsersLatest = async (req, res) => {

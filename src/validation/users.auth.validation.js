@@ -7,24 +7,11 @@ const passwordRule = Joi.string()
   )
   .required();
 
-export const changePasswordSchema = Joi.object({
-  old_password: passwordRule,
-  new_password: passwordRule
-});
-
-
 
 export const loginSchema = Joi.object({
   email: Joi.string().email().required(),
   // password: passwordRule,
 });
 
-export const signupSchema = Joi.object({
-  email: Joi.string().email().required(),
-  password: passwordRule,
-  first_name: Joi.string().required(),
-  last_name: Joi.string().required(),
-  birthday: Joi.date().iso().required(), 
-});
 
 

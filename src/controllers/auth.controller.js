@@ -3,30 +3,12 @@ import mongoose from "mongoose";
 import Product from "../models/product.js";
 import ProductVariant from "../models/productVariant.js";
 import User from "../models/user.js";
-import ProductImage from "../models/productImage.js";
-import Cart from "../models/cart.js";
-import { Op } from "sequelize";
-import crypto from "crypto";
-import bcrypt from "bcrypt";
 import { sendVerificationCodeEmail, sendBirthdayPromoCodeEmail  } from "../middlewares/mailer.middleware.js"; // your custom mail sender
-import sequelize from '../config/database.js'; // Adjust the path as necessary
-import cron from "node-cron";
 
-// At top of your auth controller file
-const verificationCodes = new Map(); 
-const verifiedEmails = new Map();   
+
 // In-memory store (or use Redis in production)
 const verificationStore = new Map(); // email -> { code, full_name, hashedPassword }
 
-// Helper function to generate a random 6-character alphanumeric code
-const generatePromoCode = () => {
-  const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let code = "";
-  for (let i = 0; i < 6; i++) {
-    code += characters.charAt(Math.floor(Math.random() * characters.length));
-  }
-  return code;
-};
 
 const generateToken = (user) => {
   return jwt.sign(

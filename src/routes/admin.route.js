@@ -1,8 +1,12 @@
 import express from "express";
-import { getAllUsersLatest, updateProductQuantity, createPublicPromo, updateProductSortOrder, getAllOrdersFull, addProductWithVariants, getMonthlyOrderTotals } from "../controllers/admin.controller.js";
+import { rebuildAllProductImages, getAllUsersLatest, updateProductQuantity, createPublicPromo, updateProductSortOrder, getAllOrdersFull, addProductWithVariants, getMonthlyOrderTotals } from "../controllers/admin.controller.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js"; // ✅ import
 
 const router = express.Router();
+
+
+// 🔄 Sync images from disk to DB and attach to products
+router.post("/admin/sync-product-images", rebuildAllProductImages);
 
 
 router.get("/admin/orders/stats/monthly", getMonthlyOrderTotals);
