@@ -21,7 +21,7 @@ const excludedPaths = [
   "/generate-dummy-data",
   "/upload-product-images",
   "/admin/products/swap-order",
-  "/public",
+  "/images",
   "/admin/create-public",
   "/admin/users",
   "/admin/run-missing-birthday-cron",

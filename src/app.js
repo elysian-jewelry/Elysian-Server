@@ -6,13 +6,8 @@ import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
 import sequelize from "./config/database.js";
-import { authenticateJWT } from "./middlewares/auth.middleware.js"; 
-import { connectToMongoDB } from "./config/mongodb.js"; 
-
-
-
-
-
+import { authenticateJWT } from "./middlewares/auth.middleware.js";
+import { connectToMongoDB } from "./config/mongodb.js";
 
 dotenv.config();
 
@@ -26,19 +21,22 @@ class App {
 
   // Connect to MySQL using Sequelize
   async connectToDatabase() {
-
     await connectToMongoDB(); // ✅ Connect to MongoDB first
     if (this.env === "development") {
       this.app.use(morgan("dev"));
     }
-
   }
 
   // Middleware setup
   initializeMiddlewares() {
     this.app.use(cors());
     this.app.use(express.json());
-    this.app.use("/public", express.static(path.join(this.__dirname, "public")));
+    // Serve only the images folder at /images
+    // Serve only the images folder at /images
+    this.app.use(
+      "/images",
+      express.static(path.join(this.__dirname, "images"))
+    );
 
     // ✅ Apply JWT middleware globally (excluding public routes)
     this.app.use(authenticateJWT);
@@ -49,7 +47,7 @@ class App {
 
   // Start server
   listen() {
-    this.app.listen(this.port, '0.0.0.0', () => {
+    this.app.listen(this.port, "0.0.0.0", () => {
       console.log(`🚀 Server is running on port ${this.port}`);
     });
   }
