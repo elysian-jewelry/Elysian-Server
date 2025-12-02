@@ -1,9 +1,1 @@
 /node_modules
-
-# Environment variables
-.env
-
-# Google Cloud credentials
-credentials-elysian-api.json
-*.service-account.json
-*.credentials.json

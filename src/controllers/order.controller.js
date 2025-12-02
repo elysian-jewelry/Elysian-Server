@@ -17,7 +17,7 @@ dotenv.config();
 
 // Load your service account key
 const auth = new google.auth.GoogleAuth({
-  keyFile: process.env.GOOGLE_CREDENTIALS_PATH,
+  keyFile: "./credentials.json", // Replace with your JSON file
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
