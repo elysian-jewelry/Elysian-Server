@@ -1,32 +1,34 @@
 import express from "express";
-import { rebuildAllProductImages, getAllUsersLatest, updateProductQuantity, createPublicPromo, updateProductSortOrder, getAllOrdersFull, addProductWithVariants, getMonthlyOrderTotals } from "../controllers/admin.controller.js";
+import {
+  rebuildAllProductImages,
+  getAllUsersLatest,
+  updateProductQuantity,
+  createPublicPromo,
+  updateProductSortOrder,
+  getAllOrdersFull,
+  addProductWithVariants,
+  getMonthlyOrderTotals,
+} from "../controllers/admin.controller.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js"; // ✅ import
 
 const router = express.Router();
 
-
-// 🔄 Sync images from disk to DB and attach to products
 router.post("/admin/sync-product-images", rebuildAllProductImages);
-
 
 router.get("/admin/orders/stats/monthly", getMonthlyOrderTotals);
 
 // Update product quantity by name and type
 router.put("/admin/update-quantity", updateProductQuantity);
 
-
 router.post("/admin/update-sort-order", updateProductSortOrder);
 
 // New route to get all users and their order stats
 router.get("/admin/users-with-orders", getAllOrdersFull);
 
-// 🔥 New route to add a product (with or without variants)
 router.post("/admin/add-product", addProductWithVariants);
 
 router.post("/admin/create-public-promocode", createPublicPromo);
 
-
-// ✅ New route
 router.get("/admin/users", getAllUsersLatest);
 
 // 🚀 New manual trigger route
