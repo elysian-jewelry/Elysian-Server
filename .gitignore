@@ -14,7 +14,7 @@ package-lock.json
 # Google Cloud / service account credentials
 credentials-elysian-api.json
 *.service-account.json
-*.credentials.json
+credentials.json
 
 # Build output (if you ever build)
 dist/
