@@ -1,1 +1,21 @@
-/node_modules
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+package-lock.json
+
+# Environment files (DO NOT COMMIT SECRETS)
+.env
+.env.local
+.env.development
+.env.production
+
+# Google Cloud / service account credentials
+credentials-elysian-api.json
+*.service-account.json
+*.credentials.json
+
+# Build output (if you ever build)
+dist/
+build/

@@ -1,10 +1,36 @@
 runtime: nodejs20
 env: standard
 
-instance_class: F1  # smallest, cost-effective
+instance_class: F1  # smallest/cost-effective
 
 automatic_scaling:
   min_instances: 1
   max_instances: 1
 
 entrypoint: node src/server.js
+
+env_variables:
+  # ─────── APP CONFIG ───────
+  PORT: "8080"
+  NODE_ENV: "production"
+
+  # ─────── MYSQL CONFIG ───────
+  MYSQL_HOST: "mysql-281cda23-elysian-d80e.h.aivencloud.com"
+  MYSQL_PORT: "26376"
+  MYSQL_USER: "avnadmin"
+  MYSQL_PASSWORD: "AVNS_QtPLNh4iXI5oKT2DqtF"
+  MYSQL_DB: "elysian"
+
+  # ─────── JWT AUTH ───────
+  JWT_SECRET: "s3cR3t!@#9v$E2z^T&dLr0*YqW+KbH1PfA%mNgXjUoC6bZiVxSwMtQnJg"
+
+  # ─────── EMAIL SMTP ───────
+  EMAIL_USER: "elysian.jewelry.eg@gmail.com"
+  EMAIL_PASS: "ahhhzhktewrlxsdo"
+
+  # ─────── MONGODB ATLAS ───────
+  MONGO_URI: "mongodb+srv://elysianjewelryeg:8kzlEq5TmRS56zCQ@elysian.ot700qr.mongodb.net/?retryWrites=true&w=majority&appName=elysian"
+
+  # ─────── GOOGLE SHEETS ───────
+  GOOGLE_SPREAD_SHEET_ID: "1MVZJN51zzYDAeRpzrpPFGJ0dyOdm1Zxk1Jksv9nRWwM"
+

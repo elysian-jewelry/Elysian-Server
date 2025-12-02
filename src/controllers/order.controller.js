@@ -15,11 +15,10 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 dotenv.config();
 
-// Load your service account key
 const auth = new google.auth.GoogleAuth({
-  keyFile: "./credentials.json", // Replace with your JSON file
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
+
 
 /**
  * GET /public/governorates
