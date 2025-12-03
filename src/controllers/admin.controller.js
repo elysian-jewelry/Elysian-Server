@@ -8,6 +8,8 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import ProductImage from "../models/productImage.js";
+import Cart from "../models/cart.js";
+import CartItem from "../models/cartItem.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -390,6 +392,7 @@ export const getAllOrdersFull = async (req, res) => {
   }
 };
 
+
 export const updateProductQuantity = async (req, res) => {
   const { name, type, quantity } = req.body;
 
@@ -422,11 +425,73 @@ export const updateProductQuantity = async (req, res) => {
         ? await ProductVariant.find({ product_id: product._id })
         : [];
 
+    // 5) If quantity is 0 → remove this product from all carts
+    let carts_affected = 0;
+    let cart_items_deleted = 0;
+
+    if (quantity === 0) {
+      // a) Find all cart items that reference this product
+      const cartItemsToRemove = await CartItem.find({
+        product_id: product._id,
+      });
+
+      if (cartItemsToRemove.length > 0) {
+        const cartItemIds = cartItemsToRemove.map((ci) => ci._id);
+        const cartIds = [
+          ...new Set(cartItemsToRemove.map((ci) => ci.cart_id.toString())),
+        ];
+
+        // b) Delete those cart items
+        const deleteResult = await CartItem.deleteMany({
+          _id: { $in: cartItemIds },
+        });
+        cart_items_deleted = deleteResult.deletedCount || 0;
+
+        // c) Remove their references from Cart.items arrays
+        await Cart.updateMany(
+          { _id: { $in: cartIds } },
+          { $pull: { items: { $in: cartItemIds } } }
+        );
+
+        // d) Recalculate total_price for each affected cart
+        for (const cartId of cartIds) {
+          const cart = await Cart.findById(cartId).populate({
+            path: "items",
+            populate: [
+              { path: "product_id", model: "Product" },
+              { path: "variant_id", model: "ProductVariant" },
+            ],
+          });
+
+          if (!cart) continue;
+
+          let newTotal = 0;
+
+          for (const item of cart.items) {
+            // Prefer variant price if present, else product price
+            const price =
+              item.variant_id?.price ??
+              item.product_id?.price ??
+              0;
+
+            newTotal += price * item.quantity;
+          }
+
+          cart.total_price = newTotal;
+          await cart.save();
+        }
+
+        carts_affected = cartIds.length;
+      }
+    }
+
     return res.status(200).json({
       message: "Stock quantity updated successfully.",
       product,
       variants,
       variants_modified: variantUpdateResult.modifiedCount || 0,
+      carts_affected,
+      cart_items_deleted,
     });
   } catch (error) {
     console.error("Error updating product quantity:", error);

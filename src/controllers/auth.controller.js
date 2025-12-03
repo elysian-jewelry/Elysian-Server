@@ -306,8 +306,6 @@ export const verifyCodeAndLogin = async (req, res) => {
     
     console.log(user);
     
-
-
     if (user) {
       const token = generateToken(user);
       return res.status(200).json({
