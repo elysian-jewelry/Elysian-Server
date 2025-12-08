@@ -51,35 +51,6 @@ export const sendVerificationCodeEmail = async (email, verificationCode) => {
 };
 
 
-export const sendPasswordResetEmail = async (user, verificationCode) => {
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: user.email,
-    subject: 'Elysian Jewelry - Password Reset',
-    html: `
-      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #fff0f6; color: #111; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #f5c2d1; border-radius: 12px;">
-        <h2 style="color: #d63384; text-align: center;">Password Reset Request 🔒</h2>
-        <p style="font-size: 16px;">Dear <strong>${user.first_name + ' ' + user.last_name || 'User'}</strong>,</p>
-        <p style="font-size: 15px;">We received a request to reset your password. Please use the verification code below to proceed:</p>
-        <div style="text-align: center; margin: 25px 0;">
-          <span style="font-size: 28px; font-weight: bold; color: #fff; background-color: #d63384; padding: 12px 30px; border-radius: 10px; letter-spacing: 3px;">${verificationCode}</span>
-        </div>
-        <p style="font-size: 14px;"><strong>Note:</strong> This code will expire in 5 minutes. If you didn’t request a password reset, no action is required.</p>
-        <p style="margin-top: 30px;">Stay fabulous! 💎<br><strong style="color: #d63384;">The Elysian Jewelry Team</strong></p>
-        <hr style="margin-top: 40px; border: none; border-top: 1px solid #f5c2d1;">
-        <p style="font-size: 12px; color: #888; text-align: center;">This is an automated message. Please do not reply.</p>
-      </div>
-    `,
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-  } catch (error) {
-    console.error('Error sending password reset email:', error);
-    throw new Error('Error sending email');
-  }
-};
-
 export const sendOrderConfirmationEmail = async (
   email,
   first_name,
@@ -168,7 +139,6 @@ export const sendOrderConfirmationEmail = async (
 };
 
 
-
 export const sendBirthdayPromoCodeEmail = async (user, promoCode) => {
 
     const { first_name, last_name } = user;
@@ -223,23 +193,19 @@ export const sendBirthdayPromoCodeEmail = async (user, promoCode) => {
   }
 };
 
-
-
 // in middlewares/mailer.middleware.js
 export const sendMissingBirthdayEmail = async (user) => {
-  const { first_name, last_name, email } = user || {};
-  const displayName = first_name && last_name ? `${first_name} ${last_name}` : (first_name || last_name || '');
 
   const profileLink = 'https://elysianjewelry.store/'; // homepage; update to /account/profile if you have a direct profile URL
 
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
-    subject: "Don’t miss your 20% Birthday Gift 🎁 | Elysian Jewelry",
+    subject: "Don't miss your 20% Birthday Gift 🎁 | Elysian Jewelry",
     html: `
       <div style="font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #fff; color: #111; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #ffc9dc; border-radius: 12px;">
         <h2 style="color: #ff4d88; text-align: center;">
-          Keep the sparkle, ${displayName ? displayName : 'elysian girlies'} ✨
+          Keep the sparkle, elysian girlies ✨
         </h2>
 
         <p style="font-size: 16px; margin-top: 15px;">

@@ -20,14 +20,11 @@ export const getUserProfile = async (req, res) => {
 export const updateUserProfile = async (req, res) => {
   try {
     const user_id = req.user.user_id;
-    const { first_name, last_name, birthday } = req.body;
+    const { birthday } = req.body;
 
     const user = await User.findById(user_id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-  
-    user.first_name = first_name;
-    user.last_name = last_name;
     user.birthday = birthday;
 
     await user.save();

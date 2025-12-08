@@ -66,7 +66,7 @@ export const runMissingBirthdayReminder = async () => {
         { birthday: null },
         { birthday: '' }
       ]
-    }).select('email first_name last_name');
+    }).select('email');
 
     let sent = 0, failed = 0;
     for (const user of users) {

@@ -9,14 +9,6 @@ const userSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    first_name: {
-      type: String,
-      default: null,
-    },
-    last_name: {
-      type: String,
-      default: null,
-    },
     birthday: {
       type: Date,
       default: null,

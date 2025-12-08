@@ -361,8 +361,6 @@ export const getAllOrdersFull = async (req, res) => {
           user: {
             _id: 1,
             email: 1,
-            first_name: 1,
-            last_name: 1,
             birthday: 1,
             created_at: 1,
             updated_at: 1
