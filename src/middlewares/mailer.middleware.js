@@ -195,7 +195,7 @@ export const sendBirthdayPromoCodeEmail = async (user, promoCode) => {
 
 // in middlewares/mailer.middleware.js
 export const sendMissingBirthdayEmail = async (user) => {
-
+  const { email } = user || {};
   const profileLink = 'https://elysianjewelry.store/'; // homepage; update to /account/profile if you have a direct profile URL
 
   const mailOptions = {
