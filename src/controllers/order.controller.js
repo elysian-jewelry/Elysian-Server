@@ -16,6 +16,10 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const auth = new google.auth.GoogleAuth({
+  credentials: {
+    client_email: process.env.GOOGLE_CLIENT_EMAIL,
+    private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+  },
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
@@ -88,6 +92,7 @@ export const validatePromoCode = async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
 
 export const checkout = async (req, res) => {
   try {
