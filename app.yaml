@@ -26,7 +26,7 @@ env_variables:
 
   # ─────── EMAIL SMTP ───────
   EMAIL_USER: "elysian.jewelry.eg@gmail.com"
-  EMAIL_PASS: "ahhhzhktewrlxsdo"
+  EMAIL_PASS: "agwyvxpqwbaedfbe"
 
   # ─────── MONGODB ATLAS ───────
   MONGO_URI: "mongodb+srv://elysianjewelryeg:8kzlEq5TmRS56zCQ@elysian.ot700qr.mongodb.net/?retryWrites=true&w=majority&appName=elysian"
