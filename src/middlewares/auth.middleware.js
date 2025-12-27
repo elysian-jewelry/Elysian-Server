@@ -23,7 +23,7 @@ const excludedPaths = [
   "/admin/sync-product-images",
   "/admin/add-products",
   "/admin/delete-products",
-  "/admin/update-quantity",
+  "/admin/update-product",
 
 ];
 
