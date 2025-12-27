@@ -2,31 +2,29 @@ import jwt from "jsonwebtoken";
 
 const excludedPaths = [
   "/auth/login",
-  "/auth/signup",
   "/auth/password/send-code",
   "/auth/verify-code-login",
   "/auth/password/verify-code",
-  "/auth/password/reset",
-  "/auth/password/change",
   "/products",
   "/products/type",
   "/reset-db",
   "/users",
   "/upload-images",
-  "/get-images",
   "/sync-images",
-  "/admin/update-quantity",
   "/products/new-arrivals",
   "/products/featured",
-  "/generate-dummy-data",
   "/upload-product-images",
   "/admin/products/swap-order",
   "/images",
-  "/admin/create-public",
+  "/admin/create-public-promocode",
   "/admin/users",
   "/admin/run-missing-birthday-cron",
   "/admin/orders/stats/monthly",
   "/admin/sync-product-images",
+  "/admin/add-products",
+  "/admin/delete-products",
+  "/admin/update-quantity",
+
 ];
 
 export const authenticateJWT = (req, res, next) => {

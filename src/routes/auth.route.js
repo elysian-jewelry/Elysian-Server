@@ -1,7 +1,6 @@
 import express from "express";
 import {
   login,
-  // signup,
   verifyCodeAndLogin,
   resetDatabase} from "../controllers/auth.controller.js";
 
@@ -15,7 +14,6 @@ router.post('/reset-db', resetDatabase);
 
 // Auth Routes
 router.post("/auth/login", validate(loginSchema, "body"), login);
-// router.post("/auth/signup", validate(signupSchema, "body"), signup);
 router.post("/auth/verify-code-login", verifyCodeAndLogin);
 
 

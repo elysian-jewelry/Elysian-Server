@@ -6,8 +6,9 @@ import {
   createPublicPromo,
   updateProductSortOrder,
   getAllOrdersFull,
-  addProductWithVariants,
+  addProductsWithVariants,
   getMonthlyOrderTotals,
+  deleteProductsByNameAndType
 } from "../controllers/admin.controller.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js"; // ✅ import
 
@@ -25,7 +26,9 @@ router.post("/admin/update-sort-order", updateProductSortOrder);
 // New route to get all users and their order stats
 router.get("/admin/users-with-orders", getAllOrdersFull);
 
-router.post("/admin/add-product", addProductWithVariants);
+router.post("/admin/add-products", addProductsWithVariants);
+
+router.delete("/admin/delete-products", deleteProductsByNameAndType);
 
 router.post("/admin/create-public-promocode", createPublicPromo);
 

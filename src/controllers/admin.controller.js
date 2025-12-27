@@ -242,53 +242,192 @@ export const updateProductSortOrder = async (req, res) => {
   }
 };
 
-// Controller to insert product with optional variants
-export const addProductWithVariants = async (req, res) => {
-  try {
-    const {
-      name,
-      description,
-      price,
-      type,
-      stock_quantity,
-      variants // array of { size, color, price, stock_quantity }
-    } = req.body;
 
-    // Validate required fields
-    if (!name || !type || typeof price !== "number") {
-      return res.status(400).json({ message: "name, type, and price are required." });
+export const deleteProductsByNameAndType = async (req, res) => {
+  try {
+    let { products } = req.body;
+
+    if (!products) {
+      return res.status(400).json({
+        message: "products is required",
+      });
     }
 
-    // Step 1: Create the main product
-    const product = new Product({
-      name,
-      description,
-      price,
-      type,
-      stock_quantity: stock_quantity || 0,
+    // Normalize to array
+    if (!Array.isArray(products)) {
+      products = [products];
+    }
+
+    // Validate input
+    for (const p of products) {
+      if (!p.name || !p.type) {
+        return res.status(400).json({
+          message: "Each product must have name and type",
+        });
+      }
+    }
+
+    // Build OR query (exact match)
+    const matchQuery = products.map(p => ({
+      name: p.name,
+      type: p.type,
+    }));
+
+    // Find matching products
+    const matchedProducts = await Product.find({
+      $or: matchQuery,
+    }).select("_id name type");
+
+    if (matchedProducts.length === 0) {
+      return res.status(404).json({
+        message: "No matching products found",
+      });
+    }
+
+    const matchedIds = matchedProducts.map(p => p._id);
+
+    // 1️⃣ Delete variants
+    await ProductVariant.deleteMany({
+      product_id: { $in: matchedIds },
     });
 
-    await product.save();
+    // 2️⃣ Delete images
+    await ProductImage.deleteMany({
+      product_id: { $in: matchedIds },
+    });
 
-    // Step 2: If variants exist, create and link them
-    if (Array.isArray(variants) && variants.length > 0) {
-      const createdVariants = await ProductVariant.insertMany(
-        variants.map((variant) => ({
-          ...variant,
-          product_id: product._id,
-        }))
-      );
+    // 3️⃣ Delete products
+    const deleteResult = await Product.deleteMany({
+      _id: { $in: matchedIds },
+    });
 
-      product.product_variants = createdVariants.map((v) => v._id);
-      await product.save();
-    }
+    return res.status(200).json({
+      message: "Products deleted successfully",
+      deletedCount: deleteResult.deletedCount,
+      deletedProducts: matchedProducts,
+    });
 
-    res.status(201).json({ message: "Product created successfully", product });
   } catch (error) {
-    console.error("Error creating product:", error);
-    res.status(500).json({ message: "Internal server error", error });
+    console.error("Delete by name+type error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
   }
 };
+
+const ALLOWED_TYPES = [
+  "Earrings",
+  "Necklaces",
+  "Bracelets",
+  "Hand Chains",
+  "Back Chains",
+  "Body Chains",
+  "Waist Chains",
+  "Sets",
+  "Bags",
+  "Rings"
+];
+
+
+export const addProductsWithVariants = async (req, res) => {
+  try {
+       // 🔴 0️⃣ Ensure body is valid JSON object
+    if (!req.body || typeof req.body !== "object") {
+      return res.status(400).json({
+        message: "Invalid JSON body",
+      });
+    }
+    const { products } = req.body;
+
+    if (!Array.isArray(products) || products.length === 0) {
+      return res.status(400).json({
+        message: "products must be a non-empty array",
+      });
+    }
+
+    // 1️⃣ Validate required fields
+    for (const p of products) {
+      if (!p.name || !p.type || typeof p.price !== "number") {
+        return res.status(400).json({
+          message: "Each product must have name, type, and price",
+        });
+      }
+    }
+
+    // 2️⃣ Check duplicates (name + type)
+    const nameTypePairs = products.map(p => ({
+      name: p.name,
+      type: p.type,
+    }));
+
+    const existingProducts = await Product.find({
+      $or: nameTypePairs,
+    }).select("name type");
+
+    if (existingProducts.length > 0) {
+      return res.status(409).json({
+        message: "Duplicate product name in the same category",
+        duplicates: existingProducts,
+      });
+    }
+
+    const createdProducts = [];
+
+    // 3️⃣ Create products one by one (variants need product_id)
+    for (const p of products) {
+      const product = await Product.create({
+        name: p.name,
+        description: p.description,
+        price: p.price,
+        type: p.type, // enum validates automatically
+        stock_quantity: p.stock_quantity || 0,
+        sort_order: p.sort_order || 0,
+      });
+
+      // 4️⃣ Create variants if provided
+      if (Array.isArray(p.variants) && p.variants.length > 0) {
+        const variants = await ProductVariant.insertMany(
+          p.variants.map(v => ({
+            product_id: product._id,
+            size: v.size,
+            color: v.color,
+            price: v.price,
+            stock_quantity: v.stock_quantity || 0,
+          }))
+        );
+
+        product.product_variants = variants.map(v => v._id);
+        await product.save();
+      }
+
+      createdProducts.push(product);
+    }
+
+    return res.status(201).json({
+      message: "Products created successfully",
+      count: createdProducts.length,
+      products: createdProducts,
+    });
+
+  } catch (error) {
+    console.error("Bulk insert error:", error);
+
+    // Handle unique index error nicely
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "Duplicate product name detected in the same category",
+        error: error.keyValue,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
 
 export const getAllOrdersFull = async (req, res) => {
   try {
