@@ -36,6 +36,7 @@ const PRODUCT_TYPES = new Set([
   "Body Chains",
   "Waist Chains",
   "Sets",
+  "Rings",
   "Bags",
 ]);
 
@@ -577,10 +578,13 @@ export const updateProduct = async (req, res) => {
     });
   }
 
-  // 🔴 Quantity validation (required)
-  if (typeof quantity !== "number" || !Number.isFinite(quantity)) {
+  // 🔴 Quantity validation (OPTIONAL)
+  if (
+    quantity !== undefined &&
+    (typeof quantity !== "number" || !Number.isFinite(quantity))
+  ) {
     return res.status(400).json({
-      message: "quantity must be a finite number.",
+      message: "quantity must be a finite number if provided.",
     });
   }
 
@@ -608,8 +612,9 @@ export const updateProduct = async (req, res) => {
       return res.status(404).json({ message: "Product not found." });
     }
 
-    // 2) Update product stock
+    if (quantity !== undefined) {
     product.stock_quantity = quantity;
+    }
 
     if (price !== undefined) {
       product.price = price;
