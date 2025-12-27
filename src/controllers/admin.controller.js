@@ -386,7 +386,7 @@ export const addProductsWithVariants = async (req, res) => {
           message: `Product ${p.name}: 'stock_quantity' must be a number`,
         });
       }
-      
+
       if (p.is_new !== undefined && typeof p.is_new !== "boolean") {
         return res.status(400).json({
           message: `Product ${p.name}: 'is_new' must be a boolean`,
@@ -420,7 +420,7 @@ export const addProductsWithVariants = async (req, res) => {
         description: p.description,
         price: p.price,
         type: p.type, // enum validates automatically
-        is_new: p.is_new,
+        is_new: p.is_new || false,
         stock_quantity: p.stock_quantity || 0,
         sort_order: p.sort_order || 0,
       });
