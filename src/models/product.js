@@ -27,6 +27,7 @@ const productSchema = new mongoose.Schema(
         "Body Chains",
         "Waist Chains",
         "Sets",
+        "Rings",
         "Bags"
       ],
     },
@@ -34,7 +35,11 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    sort_order: { type: Number, default: 0 }, // 🆕 Add this line
+    is_new: {
+      type: Boolean,
+      default: false,
+    },
+    sort_order: { type: Number, default: 0 },
     images: [
       {
         type: mongoose.Schema.Types.ObjectId,
