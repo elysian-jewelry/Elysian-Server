@@ -67,10 +67,13 @@ export const getNewArrivalProducts = async (req, res) => {
 
 export const getProductsByType = async (req, res) => {
   try {
-    const { type } = req.body;
+    const { type } = req.query;
 
-    if (!type) {
-      return res.status(400).json({ message: "Body parameter 'type' is required" });
+     // Validate
+    if (!type || typeof type !== "string") {
+      return res.status(400).json({
+        message: "type query parameter is required",
+      });
     }
 
     const products = await Product.find({ type })
