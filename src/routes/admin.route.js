@@ -2,7 +2,7 @@ import express from "express";
 import {
   rebuildAllProductImages,
   getAllUsersLatest,
-  updateProductQuantity,
+  updateProduct,
   createPublicPromo,
   updateProductSortOrder,
   getAllOrdersFull,
@@ -19,7 +19,7 @@ router.post("/admin/sync-product-images", rebuildAllProductImages);
 router.get("/admin/orders/stats/monthly", getMonthlyOrderTotals);
 
 // Update product quantity by name and type
-router.put("/admin/update-quantity", updateProductQuantity);
+router.put("/admin/update-product", updateProduct);
 
 router.post("/admin/update-sort-order", updateProductSortOrder);
 

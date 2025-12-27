@@ -19,7 +19,9 @@ const IMAGES_ROOT =
   process.env.IMAGES_DIR_ABS || path.join(__dirname, "..", "images");
 
 // Public base url (default to your prod API)
-const BASE_URL = (process.env.PUBLIC_BASE_URL || "https://elysian-api.oa.r.appspot.com").replace(/\/$/, "");
+const BASE_URL = (
+  process.env.PUBLIC_BASE_URL || "https://elysian-api.oa.r.appspot.com"
+).replace(/\/$/, "");
 
 // Allowed file extensions
 const ALLOWED = new Set([".webp", ".jpg", ".jpeg", ".png", ".gif"]);
@@ -41,12 +43,14 @@ const PRODUCT_TYPES = new Set([
 function urlJoinEncoded(...parts) {
   return parts
     .filter(Boolean)
-    .map(p => p.split("/").map(encodeURIComponent).join("/"))
+    .map((p) => p.split("/").map(encodeURIComponent).join("/"))
     .join("/")
     .replace(/\/{2,}/g, "/");
 }
 const looksPrimary = (f) =>
-  ["img_1", "main", "cover", "primary"].some(k => f.toLowerCase().includes(k));
+  ["img_1", "main", "cover", "primary"].some((k) =>
+    f.toLowerCase().includes(k)
+  );
 
 /**
  * POST /admin/rebuild-product-images
@@ -106,7 +110,10 @@ export const rebuildAllProductImages = async (req, res) => {
         const productPath = path.join(typePath, productName);
 
         // Find product by (name, type)
-        const product = await Product.findOne({ name: productName, type: typeName });
+        const product = await Product.findOne({
+          name: productName,
+          type: typeName,
+        });
         if (!product) {
           summary.missingProducts.push(`${typeName} / ${productName}`);
           continue;
@@ -115,9 +122,9 @@ export const rebuildAllProductImages = async (req, res) => {
         // Collect image files
         const entries = await fs.readdir(productPath, { withFileTypes: true });
         const files = entries
-          .filter(e => e.isFile())
-          .map(e => e.name)
-          .filter(n => ALLOWED.has(path.extname(n).toLowerCase()))
+          .filter((e) => e.isFile())
+          .map((e) => e.name)
+          .filter((n) => ALLOWED.has(path.extname(n).toLowerCase()))
           .sort();
 
         if (files.length === 0) continue;
@@ -136,11 +143,13 @@ export const rebuildAllProductImages = async (req, res) => {
         });
 
         // Insert all images for this product
-        const created = await ProductImage.insertMany(toInsert, { ordered: true });
+        const created = await ProductImage.insertMany(toInsert, {
+          ordered: true,
+        });
         summary.createdImages += created.length;
 
         // Link back to product.images (replace entire array)
-        product.images = created.map(doc => doc._id);
+        product.images = created.map((doc) => doc._id);
         await product.save();
 
         summary.processedProducts += 1;
@@ -155,13 +164,15 @@ export const rebuildAllProductImages = async (req, res) => {
   }
 };
 
-
-
 export const getAllUsersLatest = async (req, res) => {
   try {
     const pipeline = [
       // Prefer created_at; fallback to createdAt; if both missing, sort by _id as tie-breaker
-      { $addFields: { __sortCreated: { $ifNull: ["$created_at", "$createdAt"] } } },
+      {
+        $addFields: {
+          __sortCreated: { $ifNull: ["$created_at", "$createdAt"] },
+        },
+      },
       { $sort: { __sortCreated: -1, _id: -1 } },
       // Hide sensitive/internal fields
       { $project: { password: 0, __v: 0 } },
@@ -169,12 +180,12 @@ export const getAllUsersLatest = async (req, res) => {
 
     const [users, totalUsers] = await Promise.all([
       User.aggregate(pipeline),
-      User.countDocuments()
+      User.countDocuments(),
     ]);
 
     return res.status(200).json({
       count: totalUsers,
-      users
+      users,
     });
   } catch (error) {
     console.error("Error fetching users:", error);
@@ -200,10 +211,15 @@ export const updateProductSortOrder = async (req, res) => {
     // Update products in the provided order
     for (let i = 0; i < orderedNames.length; i++) {
       const productName = orderedNames[i];
-      const product = await Product.findOne({ name: productName, type: category });
+      const product = await Product.findOne({
+        name: productName,
+        type: category,
+      });
 
       if (!product) {
-        notFound.push(`❌ Not found: '${productName}' in category '${category}'`);
+        notFound.push(
+          `❌ Not found: '${productName}' in category '${category}'`
+        );
         continue;
       }
 
@@ -218,11 +234,15 @@ export const updateProductSortOrder = async (req, res) => {
     }
 
     // Get all product names in the category
-    const allCategoryProducts = await Product.find({ type: category }).select("name");
+    const allCategoryProducts = await Product.find({ type: category }).select(
+      "name"
+    );
     const allProductNames = allCategoryProducts.map((p) => p.name);
 
     // Find products not mentioned in the orderedNames list
-    const notIncluded = allProductNames.filter((name) => !orderedNames.includes(name));
+    const notIncluded = allProductNames.filter(
+      (name) => !orderedNames.includes(name)
+    );
 
     return res.status(200).json({
       success: true,
@@ -241,7 +261,6 @@ export const updateProductSortOrder = async (req, res) => {
     });
   }
 };
-
 
 export const deleteProductsByNameAndType = async (req, res) => {
   try {
@@ -268,7 +287,7 @@ export const deleteProductsByNameAndType = async (req, res) => {
     }
 
     // Build OR query (exact match)
-    const matchQuery = products.map(p => ({
+    const matchQuery = products.map((p) => ({
       name: p.name,
       type: p.type,
     }));
@@ -284,7 +303,7 @@ export const deleteProductsByNameAndType = async (req, res) => {
       });
     }
 
-    const matchedIds = matchedProducts.map(p => p._id);
+    const matchedIds = matchedProducts.map((p) => p._id);
 
     // 1️⃣ Delete variants
     await ProductVariant.deleteMany({
@@ -306,7 +325,6 @@ export const deleteProductsByNameAndType = async (req, res) => {
       deletedCount: deleteResult.deletedCount,
       deletedProducts: matchedProducts,
     });
-
   } catch (error) {
     console.error("Delete by name+type error:", error);
     return res.status(500).json({
@@ -326,13 +344,12 @@ const ALLOWED_TYPES = [
   "Waist Chains",
   "Sets",
   "Bags",
-  "Rings"
+  "Rings",
 ];
-
 
 export const addProductsWithVariants = async (req, res) => {
   try {
-       // 🔴 0️⃣ Ensure body is valid JSON object
+    // 🔴 0️⃣ Ensure body is valid JSON object
     if (!req.body || typeof req.body !== "object") {
       return res.status(400).json({
         message: "Invalid JSON body",
@@ -356,7 +373,7 @@ export const addProductsWithVariants = async (req, res) => {
     }
 
     // 2️⃣ Check duplicates (name + type)
-    const nameTypePairs = products.map(p => ({
+    const nameTypePairs = products.map((p) => ({
       name: p.name,
       type: p.type,
     }));
@@ -388,7 +405,7 @@ export const addProductsWithVariants = async (req, res) => {
       // 4️⃣ Create variants if provided
       if (Array.isArray(p.variants) && p.variants.length > 0) {
         const variants = await ProductVariant.insertMany(
-          p.variants.map(v => ({
+          p.variants.map((v) => ({
             product_id: product._id,
             size: v.size,
             color: v.color,
@@ -397,7 +414,7 @@ export const addProductsWithVariants = async (req, res) => {
           }))
         );
 
-        product.product_variants = variants.map(v => v._id);
+        product.product_variants = variants.map((v) => v._id);
         await product.save();
       }
 
@@ -409,7 +426,6 @@ export const addProductsWithVariants = async (req, res) => {
       count: createdProducts.length,
       products: createdProducts,
     });
-
   } catch (error) {
     console.error("Bulk insert error:", error);
 
@@ -428,12 +444,11 @@ export const addProductsWithVariants = async (req, res) => {
   }
 };
 
-
 export const getAllOrdersFull = async (req, res) => {
   try {
     const ORDER_ITEMS_COLL = OrderItem.collection.name; // "order_items"
-    const USERS_COLL = User.collection.name;            // "users"
-    const PRODUCTS_COLL = Product.collection.name;      // "products"
+    const USERS_COLL = User.collection.name; // "users"
+    const PRODUCTS_COLL = Product.collection.name; // "products"
 
     const pipeline = [
       { $sort: { order_date: -1, _id: -1 } },
@@ -444,8 +459,8 @@ export const getAllOrdersFull = async (req, res) => {
           from: USERS_COLL,
           localField: "user_id",
           foreignField: "_id",
-          as: "user"
-        }
+          as: "user",
+        },
       },
       { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
 
@@ -463,8 +478,8 @@ export const getAllOrdersFull = async (req, res) => {
                 from: PRODUCTS_COLL,
                 localField: "product_id",
                 foreignField: "_id",
-                as: "product"
-              }
+                as: "product",
+              },
             },
             { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
 
@@ -472,13 +487,13 @@ export const getAllOrdersFull = async (req, res) => {
             {
               $addFields: {
                 product_name: "$product.name",
-                product_type: "$product.type"
-              }
+                product_type: "$product.type",
+              },
             },
-            { $project: { product: 0 } } // remove full product doc if not needed
+            { $project: { product: 0 } }, // remove full product doc if not needed
           ],
-          as: "items"
-        }
+          as: "items",
+        },
       },
 
       {
@@ -502,26 +517,26 @@ export const getAllOrdersFull = async (req, res) => {
             email: 1,
             birthday: 1,
             created_at: 1,
-            updated_at: 1
-          }
-        }
-      }
+            updated_at: 1,
+          },
+        },
+      },
     ];
 
     let orders = await Order.aggregate(pipeline);
 
     // Convert Decimal128 prices to numbers
-    orders = orders.map(o => ({
+    orders = orders.map((o) => ({
       ...o,
-      items: o.items.map(it => ({
+      items: o.items.map((it) => ({
         ...it,
-        price: it?.price ? Number(it.price) : it.price
-      }))
+        price: it?.price ? Number(it.price) : it.price,
+      })),
     }));
 
     return res.status(200).json({
       count: orders.length,
-      orders
+      orders,
     });
   } catch (error) {
     console.error("Error fetching all orders with details:", error);
@@ -529,13 +544,37 @@ export const getAllOrdersFull = async (req, res) => {
   }
 };
 
+export const updateProduct = async (req, res) => {
+  const { name, type, quantity, price, is_new } = req.body;
 
-export const updateProductQuantity = async (req, res) => {
-  const { name, type, quantity } = req.body;
-
-  if (!name || !type || typeof quantity !== "number" || !Number.isFinite(quantity)) {
+  // 🔴 Basic required validation
+  if (!name || !type) {
     return res.status(400).json({
-      message: "name, type, and quantity (finite number) are required.",
+      message: "name and type are required.",
+    });
+  }
+
+  // 🔴 Quantity validation (required)
+  if (typeof quantity !== "number" || !Number.isFinite(quantity)) {
+    return res.status(400).json({
+      message: "quantity must be a finite number.",
+    });
+  }
+
+  // 🔴 Optional price validation
+  if (
+    price !== undefined &&
+    (typeof price !== "number" || !Number.isFinite(price))
+  ) {
+    return res.status(400).json({
+      message: "price must be a finite number if provided.",
+    });
+  }
+
+  // 🔴 Optional is_new validation
+  if (is_new !== undefined && typeof is_new !== "boolean") {
+    return res.status(400).json({
+      message: "is_new must be a boolean if provided.",
     });
   }
 
@@ -548,6 +587,15 @@ export const updateProductQuantity = async (req, res) => {
 
     // 2) Update product stock
     product.stock_quantity = quantity;
+
+     if (price !== undefined) {
+      product.price = price;
+    }
+
+    if (is_new !== undefined) {
+      product.is_new = is_new;
+    }
+
     await product.save();
 
     // 3) Update all variants (if any) to the same quantity
@@ -606,10 +654,7 @@ export const updateProductQuantity = async (req, res) => {
 
           for (const item of cart.items) {
             // Prefer variant price if present, else product price
-            const price =
-              item.variant_id?.price ??
-              item.product_id?.price ??
-              0;
+            const price = item.variant_id?.price ?? item.product_id?.price ?? 0;
 
             newTotal += price * item.quantity;
           }
@@ -636,21 +681,23 @@ export const updateProductQuantity = async (req, res) => {
   }
 };
 
-
-
 export const createPublicPromo = async (req, res) => {
   try {
     const { promo_code, discount, expiry_date } = req.body;
 
     if (!promo_code || !discount) {
-      return res.status(400).json({ message: "promo_code and discount are required." });
+      return res
+        .status(400)
+        .json({ message: "promo_code and discount are required." });
     }
 
     const formattedCode = promo_code.trim().toUpperCase();
 
     // ✅ Enforce exactly 6 characters
     if (formattedCode.length !== 6) {
-      return res.status(400).json({ message: "Promo code must be exactly 6 characters long." });
+      return res
+        .status(400)
+        .json({ message: "Promo code must be exactly 6 characters long." });
     }
 
     const existing = await PromoCode.findOne({ promo_code: formattedCode });
@@ -663,20 +710,18 @@ export const createPublicPromo = async (req, res) => {
       discount: Number(discount),
       is_public: true,
       used_by: [],
-      expiry_date: expiry_date ? new Date(expiry_date) : new Date("2100-01-01")
+      expiry_date: expiry_date ? new Date(expiry_date) : new Date("2100-01-01"),
     });
 
     return res.status(201).json({
       message: "Public promo code created successfully",
-      promo
+      promo,
     });
   } catch (error) {
     console.error("Error creating promo code:", error);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
-
-
 
 // --- NEW: Monthly order totals with grand total ---
 export const getMonthlyOrderTotals = async (req, res) => {
@@ -687,7 +732,9 @@ export const getMonthlyOrderTotals = async (req, res) => {
     const tz = req.query.tz || "Africa/Cairo"; // your default
     // status can be: "all" to include everything, or a CSV like "Pending,Shipped"
     // default excludes Cancelled
-    const statusParam = (req.query.status || "exclude-cancelled").trim().toLowerCase();
+    const statusParam = (req.query.status || "exclude-cancelled")
+      .trim()
+      .toLowerCase();
 
     const start = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
     const end = new Date(Date.UTC(year + 1, 0, 1, 0, 0, 0));
@@ -703,7 +750,7 @@ export const getMonthlyOrderTotals = async (req, res) => {
       } else {
         const statuses = statusParam
           .split(",")
-          .map(s => s.trim())
+          .map((s) => s.trim())
           .filter(Boolean);
         if (statuses.length) match.status = { $in: statuses };
       }
@@ -718,7 +765,7 @@ export const getMonthlyOrderTotals = async (req, res) => {
           _total: { $toDouble: "$total_amount" },
           _subtotal: { $toDouble: "$subtotal" },
           _shipping: { $toDouble: "$shipping_cost" },
-        }
+        },
       },
 
       // Truncate to month in the given time zone
@@ -728,10 +775,10 @@ export const getMonthlyOrderTotals = async (req, res) => {
             $dateTrunc: {
               date: "$order_date",
               unit: "month",
-              timezone: tz
-            }
-          }
-        }
+              timezone: tz,
+            },
+          },
+        },
       },
 
       // Use a facet so we get both monthly and grand totals in one pass
@@ -745,18 +792,22 @@ export const getMonthlyOrderTotals = async (req, res) => {
                 total_amount: { $sum: "$_total" },
                 subtotal: { $sum: "$_subtotal" },
                 shipping_cost: { $sum: "$_shipping" },
-              }
+              },
             },
             { $sort: { _id: 1 } },
             // Pretty month label like "2025-01"
             {
               $addFields: {
                 month: {
-                  $dateToString: { date: "$_id", format: "%Y-%m", timezone: tz }
-                }
-              }
+                  $dateToString: {
+                    date: "$_id",
+                    format: "%Y-%m",
+                    timezone: tz,
+                  },
+                },
+              },
             },
-            { $project: { _id: 0 } }
+            { $project: { _id: 0 } },
           ],
 
           grand: [
@@ -767,24 +818,29 @@ export const getMonthlyOrderTotals = async (req, res) => {
                 total_amount: { $sum: "$_total" },
                 subtotal: { $sum: "$_subtotal" },
                 shipping_cost: { $sum: "$_shipping" },
-              }
+              },
             },
-            { $project: { _id: 0 } }
-          ]
-        }
-      }
+            { $project: { _id: 0 } },
+          ],
+        },
+      },
     ];
 
     const [result] = await Order.aggregate(pipeline);
     const monthly = result.monthly || [];
-    const grand = (result.grand && result.grand[0]) || { orders: 0, total_amount: 0, subtotal: 0, shipping_cost: 0 };
+    const grand = (result.grand && result.grand[0]) || {
+      orders: 0,
+      total_amount: 0,
+      subtotal: 0,
+      shipping_cost: 0,
+    };
 
     return res.status(200).json({
       year,
       timezone: tz,
       status_filter: statusParam,
-      monthly,    // [{ month: "2025-01", orders: N, total_amount: X, subtotal: Y, shipping_cost: Z }, ...]
-      grand       // { orders, total_amount, subtotal, shipping_cost }
+      monthly, // [{ month: "2025-01", orders: N, total_amount: X, subtotal: Y, shipping_cost: Z }, ...]
+      grand, // { orders, total_amount, subtotal, shipping_cost }
     });
   } catch (error) {
     console.error("Error aggregating monthly order totals:", error);
