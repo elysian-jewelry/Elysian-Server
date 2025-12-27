@@ -370,6 +370,28 @@ export const addProductsWithVariants = async (req, res) => {
           message: "Each product must have name, type, and price",
         });
       }
+
+      if (!ALLOWED_TYPES.includes(p.type)) {
+        return res.status(400).json({
+          message: `Product ${p.name}: invalid type '${p.type}'`,
+          allowedTypes: ALLOWED_TYPES,
+        });
+      }
+
+      if (
+        p.stock_quantity !== undefined &&
+        typeof p.stock_quantity !== "number"
+      ) {
+        return res.status(400).json({
+          message: `Product ${p.name}: 'stock_quantity' must be a number`,
+        });
+      }
+      
+      if (p.is_new !== undefined && typeof p.is_new !== "boolean") {
+        return res.status(400).json({
+          message: `Product ${p.name}: 'is_new' must be a boolean`,
+        });
+      }
     }
 
     // 2️⃣ Check duplicates (name + type)
@@ -398,6 +420,7 @@ export const addProductsWithVariants = async (req, res) => {
         description: p.description,
         price: p.price,
         type: p.type, // enum validates automatically
+        is_new: p.is_new,
         stock_quantity: p.stock_quantity || 0,
         sort_order: p.sort_order || 0,
       });
@@ -588,7 +611,7 @@ export const updateProduct = async (req, res) => {
     // 2) Update product stock
     product.stock_quantity = quantity;
 
-     if (price !== undefined) {
+    if (price !== undefined) {
       product.price = price;
     }
 

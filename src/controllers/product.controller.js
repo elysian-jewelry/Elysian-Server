@@ -43,7 +43,6 @@ export const getFeaturedProducts = async (req, res) => {
   }
 };
 
-// New Arrivals Endpoint
 export const getNewArrivalProducts = async (req, res) => {
   try {
     const products = await Product.find({ $or: NEW_ARRIVALS })
