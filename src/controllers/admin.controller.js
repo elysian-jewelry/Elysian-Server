@@ -69,6 +69,7 @@ export const rebuildAllProductImages = async (req, res) => {
     createdImages: 0,
     updatedProducts: 0,
     missingProducts: [],
+    productsWithoutImages: [], // 👈 NEW
     skippedTypes: [],
     errors: [],
   };
@@ -157,6 +158,19 @@ export const rebuildAllProductImages = async (req, res) => {
         summary.updatedProducts += 1;
       }
     }
+
+    // 4) Find products that still have no images
+    const productsWithoutImages = await Product.find({
+      $or: [{ images: { $exists: false } }, { images: { $size: 0 } }],
+    })
+      .select("_id name type")
+      .lean();
+
+    summary.productsWithoutImages = productsWithoutImages.map((p) => ({
+      id: p._id,
+      name: p.name,
+      type: p.type,
+    }));
 
     return res.status(200).json({ success: true, ...summary });
   } catch (err) {
@@ -613,7 +627,7 @@ export const updateProduct = async (req, res) => {
     }
 
     if (quantity !== undefined) {
-    product.stock_quantity = quantity;
+      product.stock_quantity = quantity;
     }
 
     if (price !== undefined) {
