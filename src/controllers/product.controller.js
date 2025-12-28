@@ -65,22 +65,31 @@ export const getFeaturedProducts = async (req, res) => {
 
 export const getNewArrivalProducts = async (req, res) => {
   try {
-    const products = await Product.find({ $or: NEW_ARRIVALS })
+    const products = await Product.find({
+      type: {
+        $in: ["Earrings", "Hand Chains", "Necklaces", "Bracelets"],
+      },
+      is_new: true,
+      stock_quantity: { $ne: 0 },
+      $or: [
+        { product_variants: { $exists: false } },
+        { product_variants: { $size: 0 } },
+      ],
+    })
       .sort({ name: 1 })
       .populate({
         path: "images",
         select: "image_url is_primary",
-        options: { limit: 4 }
-      })
-      .populate({
-        path: "product_variants",
-        select: "variant_id size color price stock_quantity"
+        options: { limit: 4 },
       });
 
     res.status(200).json(formatProductResponse(products));
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error fetching new arrivals", error });
+    res.status(500).json({
+      message: "Error fetching new arrivals",
+      error,
+    });
   }
 };
 
