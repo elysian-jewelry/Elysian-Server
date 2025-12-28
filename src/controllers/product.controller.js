@@ -9,10 +9,10 @@ const NEW_ARRIVALS = [
   { name: "Seashell", type: "Necklaces" }
 ];
 
-
 export const getFeaturedProducts = async (req, res) => {
   try {
-    const topProducts = await OrderItem.aggregate([
+    // 1️⃣ Aggregate most ordered products
+    const aggregated = await OrderItem.aggregate([
       {
         $group: {
           _id: "$product_id",
@@ -20,40 +20,47 @@ export const getFeaturedProducts = async (req, res) => {
         },
       },
       { $sort: { totalOrdered: -1 } },
-      { $limit: 4 },
+      { $limit: 20 }, // take more to allow filtering
     ]);
 
-    if (!topProducts.length) {
+    if (!aggregated.length) {
       return res.status(200).json([]);
     }
 
-    const productIds = topProducts.map(p => p._id);
+    const productIds = aggregated.map(p => p._id);
 
-    // 2️⃣ Fetch product details
-    const products = await Product.find({ _id: { $in: productIds } })
+    // 2️⃣ Fetch products WITHOUT variants
+    const products = await Product.find({
+      _id: { $in: productIds },
+      $or: [
+        { product_variants: { $exists: false } },
+        { product_variants: { $size: 0 } },
+      ],
+    })
       .populate({
         path: "images",
         select: "image_url is_primary",
         options: { limit: 4 },
-      })
-      .populate({
-        path: "product_variants",
-        select: "variant_id size color price stock_quantity",
       });
 
-    const orderedProducts = productIds.map(id =>
-      products.find(p => p._id.toString() === id.toString())
-    );
+    // 3️⃣ Preserve order and limit to top 4
+    const orderedProducts = aggregated
+      .map(a =>
+        products.find(p => p._id.toString() === a._id.toString())
+      )
+      .filter(Boolean)
+      .slice(0, 4);
 
     res.status(200).json(formatProductResponse(orderedProducts));
   } catch (error) {
     console.error(error);
     res.status(500).json({
-      message: "Error fetching top ordered products",
+      message: "Error fetching featured products",
       error,
     });
   }
 };
+
 
 
 export const getNewArrivalProducts = async (req, res) => {
