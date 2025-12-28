@@ -1,15 +1,5 @@
 import Product from "../models/product.js";
-import ProductImage from "../models/productImage.js";
-import ProductVariant from "../models/productVariant.js";
-import mongoose from "mongoose";
-
-// Featured products based on name and type
-const FEATURED_PRODUCTS = [
-  { name: "The OG (in gold)", type: "Hand Chains" },
-  { name: "The OG Drop (in gold)", type: "Necklaces" },
-  { name: "The OG", type: "Waist Chains" },
-  { name: "Pearly Starfish", type: "Earrings" }
-];
+import OrderItem from "../models/orderItem.js";
 
 // New arrivals based on name and type
 const NEW_ARRIVALS = [
@@ -20,28 +10,51 @@ const NEW_ARRIVALS = [
 ];
 
 
-
-// Featured Products Endpoint
 export const getFeaturedProducts = async (req, res) => {
   try {
-    const products = await Product.find({ $or: FEATURED_PRODUCTS })
-      .sort({ name: 1 })
+    const topProducts = await OrderItem.aggregate([
+      {
+        $group: {
+          _id: "$product_id",
+          totalOrdered: { $sum: "$quantity" },
+        },
+      },
+      { $sort: { totalOrdered: -1 } },
+      { $limit: 4 },
+    ]);
+
+    if (!topProducts.length) {
+      return res.status(200).json([]);
+    }
+
+    const productIds = topProducts.map(p => p._id);
+
+    // 2️⃣ Fetch product details
+    const products = await Product.find({ _id: { $in: productIds } })
       .populate({
         path: "images",
         select: "image_url is_primary",
-        options: { limit: 4 }
+        options: { limit: 4 },
       })
       .populate({
         path: "product_variants",
-        select: "variant_id size color price stock_quantity"
+        select: "variant_id size color price stock_quantity",
       });
 
-    res.status(200).json(formatProductResponse(products));
+    const orderedProducts = productIds.map(id =>
+      products.find(p => p._id.toString() === id.toString())
+    );
+
+    res.status(200).json(formatProductResponse(orderedProducts));
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error fetching featured products", error });
+    res.status(500).json({
+      message: "Error fetching top ordered products",
+      error,
+    });
   }
 };
+
 
 export const getNewArrivalProducts = async (req, res) => {
   try {
@@ -69,7 +82,6 @@ export const getProductsByType = async (req, res) => {
   try {
     const { type } = req.query;
 
-     // Validate
     if (!type || typeof type !== "string") {
       return res.status(400).json({
         message: "type query parameter is required",
