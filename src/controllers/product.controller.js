@@ -65,25 +65,48 @@ export const getFeaturedProducts = async (req, res) => {
 
 export const getNewArrivalProducts = async (req, res) => {
   try {
-    const products = await Product.find({
-      type: {
-        $in: ["Earrings", "Hand Chains", "Necklaces", "Bracelets"],
+    const products = await Product.aggregate([
+      // 1️⃣ Filter
+      {
+        $match: {
+          type: {
+            $in: ["Earrings", "Hand Chains", "Necklaces", "Bracelets"],
+          },
+          is_new: true,
+          stock_quantity: { $ne: 0 },
+          $or: [
+            { product_variants: { $exists: false } },
+            { product_variants: { $size: 0 } },
+          ],
+        },
       },
-      is_new: true,
-      stock_quantity: { $ne: 0 },
-      $or: [
-        { product_variants: { $exists: false } },
-        { product_variants: { $size: 0 } },
-      ],
-    })
-      .sort({ name: 1 })
-      .populate({
-        path: "images",
-        select: "image_url is_primary",
-        options: { limit: 4 },
-      });
 
-    res.status(200).json(formatProductResponse(products));
+      // 2️⃣ Sort inside each category (you can change this)
+      { $sort: { created_at: -1 } },
+
+      // 3️⃣ Group → pick ONE product per type
+      {
+        $group: {
+          _id: "$type",
+          product: { $first: "$$ROOT" },
+        },
+      },
+
+      // 4️⃣ Flatten
+      { $replaceRoot: { newRoot: "$product" } },
+
+      // 5️⃣ Limit to exactly 4 (safety)
+      { $limit: 4 },
+    ]);
+
+    // 6️⃣ Populate images manually
+    const populatedProducts = await Product.populate(products, {
+      path: "images",
+      select: "image_url is_primary",
+      options: { limit: 4 },
+    });
+
+    res.status(200).json(formatProductResponse(populatedProducts));
   } catch (error) {
     console.error(error);
     res.status(500).json({
