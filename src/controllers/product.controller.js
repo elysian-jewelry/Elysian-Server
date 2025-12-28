@@ -61,12 +61,9 @@ export const getFeaturedProducts = async (req, res) => {
   }
 };
 
-
-
 export const getNewArrivalProducts = async (req, res) => {
   try {
     const products = await Product.aggregate([
-      // 1️⃣ Filter
       {
         $match: {
           type: {
@@ -81,10 +78,10 @@ export const getNewArrivalProducts = async (req, res) => {
         },
       },
 
-      // 2️⃣ Sort inside each category (you can change this)
+      // newest per category
       { $sort: { created_at: -1 } },
 
-      // 3️⃣ Group → pick ONE product per type
+      // ONE product per category
       {
         $group: {
           _id: "$type",
@@ -92,29 +89,41 @@ export const getNewArrivalProducts = async (req, res) => {
         },
       },
 
-      // 4️⃣ Flatten
       { $replaceRoot: { newRoot: "$product" } },
 
-      // 5️⃣ Limit to exactly 4 (safety)
       { $limit: 4 },
     ]);
 
-    // 6️⃣ Populate images manually
+    // Populate images
     const populatedProducts = await Product.populate(products, {
       path: "images",
       select: "image_url is_primary",
       options: { limit: 4 },
     });
 
-    res.status(200).json(formatProductResponse(populatedProducts));
+    // ✅ MANUAL RESPONSE FORMAT (NO toObject)
+    const response = populatedProducts.map((p) => ({
+      id: p._id,
+      name: p.name,
+      type: p.type,
+      price: p.price,
+      stock_quantity: p.stock_quantity,
+      is_new: p.is_new,
+      images: (p.images || []).map((img) => ({
+        image_url: img.image_url,
+        is_primary: img.is_primary,
+      })),
+    }));
+
+    return res.status(200).json(response);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
+    console.error("Error fetching new arrivals:", error);
+    return res.status(500).json({
       message: "Error fetching new arrivals",
-      error,
     });
   }
 };
+
 
 
 export const getProductsByType = async (req, res) => {
