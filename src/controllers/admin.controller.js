@@ -583,13 +583,23 @@ export const getAllOrdersFull = async (req, res) => {
 };
 
 export const updateProduct = async (req, res) => {
-  const { name, type, quantity, price, is_new } = req.body;
+  const { name, type, quantity, price, is_new, new_name} = req.body;
 
   // 🔴 Basic required validation
   if (!name || !type) {
     return res.status(400).json({
       message: "name and type are required.",
     });
+  }
+
+
+   // 🔴 Optional new_name validation
+  if (new_name !== undefined) {
+    if (typeof new_name !== "string" || !new_name.trim()) {
+      return res.status(400).json({
+        message: "new_name must be a non-empty string if provided.",
+      });
+    }
   }
 
   // 🔴 Quantity validation (OPTIONAL)
@@ -624,6 +634,11 @@ export const updateProduct = async (req, res) => {
     const product = await Product.findOne({ name, type });
     if (!product) {
       return res.status(404).json({ message: "Product not found." });
+    }
+
+     // 🔁 Update name if requested
+    if (new_name !== undefined) {
+      product.name = new_name.trim();
     }
 
     if (quantity !== undefined) {
