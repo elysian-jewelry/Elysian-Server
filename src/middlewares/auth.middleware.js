@@ -2,9 +2,7 @@ import jwt from "jsonwebtoken";
 
 const excludedPaths = [
   "/auth/login",
-  "/auth/password/send-code",
   "/auth/verify-code-login",
-  "/auth/password/verify-code",
   "/products",
   "/products/type",
   "/reset-db",
@@ -24,6 +22,7 @@ const excludedPaths = [
   "/admin/add-products",
   "/admin/delete-products",
   "/admin/update-product",
+  "/admin/delete-user-orders-by-email",
 
 ];
 

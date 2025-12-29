@@ -53,6 +53,52 @@ const looksPrimary = (f) =>
     f.toLowerCase().includes(k)
   );
 
+export const deleteUserOrdersByEmail = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: "email is required" });
+  }
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const orders = await Order.find({ user_id: user._id }).select("_id");
+    const orderIds = orders.map((o) => o._id);
+
+    if (orderIds.length === 0) {
+      return res.status(200).json({
+        message: "User has no orders",
+      });
+    }
+
+    const orderItemsResult = await OrderItem.deleteMany({
+      order_id: { $in: orderIds },
+    });
+
+    const ordersResult = await Order.deleteMany({
+      _id: { $in: orderIds },
+    });
+
+    return res.status(200).json({
+      message: "Orders deleted successfully",
+      deleted: {
+        orders: ordersResult.deletedCount,
+        order_items: orderItemsResult.deletedCount,
+      },
+    });
+  } catch (error) {
+    console.error("Delete user orders error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
 /**
  * POST /admin/rebuild-product-images
  * 1) DELETE ALL docs from product_images
@@ -583,7 +629,7 @@ export const getAllOrdersFull = async (req, res) => {
 };
 
 export const updateProduct = async (req, res) => {
-  const { name, type, quantity, price, is_new, new_name} = req.body;
+  const { name, type, quantity, price, is_new, new_name } = req.body;
 
   // 🔴 Basic required validation
   if (!name || !type) {
@@ -592,8 +638,7 @@ export const updateProduct = async (req, res) => {
     });
   }
 
-
-   // 🔴 Optional new_name validation
+  // 🔴 Optional new_name validation
   if (new_name !== undefined) {
     if (typeof new_name !== "string" || !new_name.trim()) {
       return res.status(400).json({
@@ -636,7 +681,7 @@ export const updateProduct = async (req, res) => {
       return res.status(404).json({ message: "Product not found." });
     }
 
-     // 🔁 Update name if requested
+    // 🔁 Update name if requested
     if (new_name !== undefined) {
       product.name = new_name.trim();
     }

@@ -8,11 +8,17 @@ import {
   getAllOrdersFull,
   addProductsWithVariants,
   getMonthlyOrderTotals,
-  deleteProductsByNameAndType
+  deleteProductsByNameAndType,
+  deleteUserOrdersByEmail
 } from "../controllers/admin.controller.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js"; // ✅ import
 
 const router = express.Router();
+
+router.delete(
+  "/admin/delete-user-orders-by-email",
+  deleteUserOrdersByEmail
+);
 
 router.post("/admin/sync-product-images", rebuildAllProductImages);
 
