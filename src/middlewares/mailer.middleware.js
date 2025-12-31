@@ -78,15 +78,55 @@ export const sendOrderConfirmationEmail = async (
     )
     .join('');
 
-  // Build summary section
-  const summaryHtml = `
-    <div style="margin-top: 20px; font-size: 15px; line-height: 1.6; color: #111; text-align: center;">
-      <p><strong>Shipping Address:</strong> ${address}</p>
-      <p><strong>Shipping Cost:</strong> ${shipping_cost} EGP</p>
-      <p><strong>Total Amount:</strong> ${order.total_amount} EGP</p>
-      <p><strong>Estimated Delivery:</strong> 4–7 working days 🚚</p>
-    </div>
-  `;
+// Build summary section (with optional discount)
+const hasDiscount = discount && discount > 0;
+
+const summaryHtml = `
+  <div style="margin-top: 20px; font-size: 15px; line-height: 1.8; color: #111; text-align: center;">
+    <p><strong>Shipping Address:</strong> ${address}</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px auto; max-width: 420px; border-collapse: collapse;">
+      <tr>
+        <td style="padding: 6px 0; text-align: left;">Subtotal</td>
+        <td style="padding: 6px 0; text-align: right;">${subtotal} EGP</td>
+      </tr>
+
+      ${
+        hasDiscount
+          ? `
+        <tr>
+          <td style="padding: 6px 0; text-align: left; color: #ff4d88;">
+            Discount (${discount}%)
+          </td>
+          <td style="padding: 6px 0; text-align: right; color: #ff4d88;">
+            − ${(subtotal * discount / 100).toFixed(2)} EGP
+          </td>
+        </tr>
+      `
+          : ""
+      }
+
+      <tr>
+        <td style="padding: 6px 0; text-align: left;">Shipping</td>
+        <td style="padding: 6px 0; text-align: right;">${shipping_cost} EGP</td>
+      </tr>
+
+      <tr style="border-top: 1px solid #eee;">
+        <td style="padding: 10px 0; text-align: left; font-weight: bold;">
+          Total
+        </td>
+        <td style="padding: 10px 0; text-align: right; font-weight: bold;">
+          ${order.total_amount} EGP
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin-top: 12px;">
+      <strong>Estimated Delivery:</strong> 4–7 working days 🚚
+    </p>
+  </div>
+`;
+
 
   // Full HTML content
   const htmlContent = `
