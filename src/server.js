@@ -1,13 +1,12 @@
 import App from "./app.js";
-import { birthdayPromoCron, missingBirthdayReminderCron } from "./controllers/cron.controller.js";
+import { birthdayPromoCron } from "./controllers/cron.controller.js";
 
 const startServer = async () => {
   const app = new App();
-  await app.connectToDatabase(); // ✅ Wait for DB connection
+  await app.connectToDatabase(); 
   app.initializeMiddlewares();
-  app.listen(); // ✅ Now it's safe to start the server
+  app.listen(); 
   birthdayPromoCron(); // ✅ Cron can run now
-  // missingBirthdayReminderCron(); // ✅ Production cron can run now
 };
 
 startServer();

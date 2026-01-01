@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import Product from "../models/product.js";
 import ProductVariant from "../models/productVariant.js";
 import User from "../models/user.js";
-import { sendVerificationCodeEmail, sendBirthdayPromoCodeEmail  } from "../middlewares/mailer.middleware.js"; // your custom mail sender
+import { sendVerificationCodeEmail  } from "../middlewares/mailer.middleware.js"; // your custom mail sender
 
 
 // In-memory store (or use Redis in production)
