@@ -628,8 +628,19 @@ export const getAllOrdersFull = async (req, res) => {
   }
 };
 
+
 export const updateProduct = async (req, res) => {
-  const { name, type, quantity, price, is_new, new_name } = req.body;
+  const {
+    name,
+    type,
+    product_quantity,
+    price,
+    is_new,
+    new_name,
+    size,
+    color,
+    variant_quantity,
+  } = req.body;
 
   // 🔴 Basic required validation
   if (!name || !type) {
@@ -647,13 +658,14 @@ export const updateProduct = async (req, res) => {
     }
   }
 
-  // 🔴 Quantity validation (OPTIONAL)
+  // 🔴 Product quantity validation
   if (
-    quantity !== undefined &&
-    (typeof quantity !== "number" || !Number.isFinite(quantity))
+    product_quantity !== undefined &&
+    (typeof product_quantity !== "number" ||
+      !Number.isFinite(product_quantity))
   ) {
     return res.status(400).json({
-      message: "quantity must be a finite number if provided.",
+      message: "product_quantity must be a finite number if provided.",
     });
   }
 
@@ -675,113 +687,139 @@ export const updateProduct = async (req, res) => {
   }
 
   try {
-    // 1) Find product
+    // 1️⃣ Find product
     const product = await Product.findOne({ name, type });
     if (!product) {
       return res.status(404).json({ message: "Product not found." });
     }
 
-    // 🔁 Update name if requested
-    if (new_name !== undefined) {
-      product.name = new_name.trim();
-    }
-
-    if (quantity !== undefined) {
-      product.stock_quantity = quantity;
-    }
-
-    if (price !== undefined) {
-      product.price = price;
-    }
-
-    if (is_new !== undefined) {
-      product.is_new = is_new;
-    }
+    // 2️⃣ Update product fields
+    if (new_name !== undefined) product.name = new_name.trim();
+    if (product_quantity !== undefined)
+      product.stock_quantity = product_quantity;
+    if (price !== undefined) product.price = price;
+    if (is_new !== undefined) product.is_new = is_new;
 
     await product.save();
 
-    // 3) Update all variants (if any) to the same quantity
-    const variantUpdateResult = await ProductVariant.updateMany(
-      { product_id: product._id },
-      { $set: { stock_quantity: quantity } }
-    );
-
-    // 4) (Optional) fetch variants if you want to return them
-    const variants =
-      variantUpdateResult.matchedCount > 0
-        ? await ProductVariant.find({ product_id: product._id })
-        : [];
-
-    // 5) If quantity is 0 → remove this product from all carts
+    // 3️⃣ Update ONE variant (size OR color)
+    let updatedVariant = null;
     let carts_affected = 0;
     let cart_items_deleted = 0;
 
-    if (quantity === 0) {
-      // a) Find all cart items that reference this product
-      const cartItemsToRemove = await CartItem.find({
-        product_id: product._id,
-      });
-
-      if (cartItemsToRemove.length > 0) {
-        const cartItemIds = cartItemsToRemove.map((ci) => ci._id);
-        const cartIds = [
-          ...new Set(cartItemsToRemove.map((ci) => ci.cart_id.toString())),
-        ];
-
-        // b) Delete those cart items
-        const deleteResult = await CartItem.deleteMany({
-          _id: { $in: cartItemIds },
+    if (variant_quantity !== undefined) {
+      if (
+        typeof variant_quantity !== "number" ||
+        !Number.isFinite(variant_quantity)
+      ) {
+        return res.status(400).json({
+          message: "variant_quantity must be a finite number.",
         });
-        cart_items_deleted = deleteResult.deletedCount || 0;
+      }
 
-        // c) Remove their references from Cart.items arrays
-        await Cart.updateMany(
-          { _id: { $in: cartIds } },
-          { $pull: { items: { $in: cartItemIds } } }
-        );
+      const hasSize = size !== undefined;
+      const hasColor = color !== undefined;
 
-        // d) Recalculate total_price for each affected cart
-        for (const cartId of cartIds) {
-          const cart = await Cart.findById(cartId).populate({
-            path: "items",
-            populate: [
-              { path: "product_id", model: "Product" },
-              { path: "variant_id", model: "ProductVariant" },
-            ],
+      if (hasSize && hasColor) {
+        return res.status(400).json({
+          message: "Variant can have either size OR color, not both.",
+        });
+      }
+
+      if (!hasSize && !hasColor) {
+        return res.status(400).json({
+          message: "Provide either size or color to update variant stock.",
+        });
+      }
+
+      const variantQuery = {
+        product_id: product._id,
+        ...(hasSize && { size }),
+        ...(hasColor && { color }),
+      };
+
+      updatedVariant = await ProductVariant.findOneAndUpdate(
+        variantQuery,
+        { $set: { stock_quantity: variant_quantity } },
+        { new: true }
+      );
+
+      if (!updatedVariant) {
+        return res.status(404).json({
+          message: "Product variant not found.",
+        });
+      }
+
+      // 🛒 If VARIANT stock becomes 0 → remove ONLY this variant from carts
+      if (variant_quantity === 0) {
+        const cartItemsToRemove = await CartItem.find({
+          product_id: product._id,
+          variant_id: updatedVariant._id,
+        });
+
+        if (cartItemsToRemove.length > 0) {
+          const cartItemIds = cartItemsToRemove.map((ci) => ci._id);
+          const cartIds = [
+            ...new Set(cartItemsToRemove.map((ci) => ci.cart_id.toString())),
+          ];
+
+          const deleteResult = await CartItem.deleteMany({
+            _id: { $in: cartItemIds },
           });
+          cart_items_deleted = deleteResult.deletedCount || 0;
 
-          if (!cart) continue;
+          await Cart.updateMany(
+            { _id: { $in: cartIds } },
+            { $pull: { items: { $in: cartItemIds } } }
+          );
 
-          let newTotal = 0;
+          for (const cartId of cartIds) {
+            const cart = await Cart.findById(cartId).populate({
+              path: "items",
+              populate: [
+                { path: "product_id" },
+                { path: "variant_id" },
+              ],
+            });
 
-          for (const item of cart.items) {
-            // Prefer variant price if present, else product price
-            const price = item.variant_id?.price ?? item.product_id?.price ?? 0;
+            if (!cart) continue;
 
-            newTotal += price * item.quantity;
+            cart.total_price = cart.items.reduce((sum, item) => {
+              const itemPrice =
+                item.variant_id?.price ??
+                item.product_id?.price ??
+                0;
+              return sum + itemPrice * item.quantity;
+            }, 0);
+
+            await cart.save();
           }
 
-          cart.total_price = newTotal;
-          await cart.save();
+          carts_affected = cartIds.length;
         }
-
-        carts_affected = cartIds.length;
       }
     }
 
+    // 4️⃣ Response-safe variants array
+    const variants = updatedVariant ? [updatedVariant] : [];
+
     return res.status(200).json({
-      message: "Stock quantity updated successfully.",
+      message: "Product updated successfully.",
       product,
       variants,
-      variants_modified: variantUpdateResult.modifiedCount || 0,
+      variants_modified: updatedVariant ? 1 : 0,
       carts_affected,
       cart_items_deleted,
     });
   } catch (error) {
-    console.error("Error updating product quantity:", error);
-    return res.status(500).json({ message: "Internal server error", error });
+    console.error("Error updating product:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error,
+    });
   }
 };
+
 
 export const createPublicPromo = async (req, res) => {
   try {
