@@ -27,7 +27,7 @@ router.get("/admin/orders/stats/monthly", getMonthlyOrderTotals);
 // Update product quantity by name and type
 router.put("/admin/update-product", updateProduct);
 
-router.post("/admin/update-sort-order", updateProductSortOrder);
+router.put("/admin/update-sort-order", updateProductSortOrder);
 
 // New route to get all users and their order stats
 router.get("/admin/users-with-orders", getAllOrdersFull);

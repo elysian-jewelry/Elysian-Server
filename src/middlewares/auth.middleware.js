@@ -23,7 +23,6 @@ const excludedPaths = [
   "/admin/update-product",
   "/admin/delete-user-orders-by-email",
   "/admin/update-sort-order",
-
 ];
 
 export const authenticateJWT = (req, res, next) => {
