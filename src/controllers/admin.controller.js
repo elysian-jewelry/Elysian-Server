@@ -255,66 +255,68 @@ export const getAllUsersLatest = async (req, res) => {
 };
 
 export const updateProductSortOrder = async (req, res) => {
-  const { category, orderedNames } = req.body;
+  const { name, category, sort_order } = req.body;
 
-  if (!category || !Array.isArray(orderedNames)) {
+  if (!name || !category || sort_order == null) {
     return res.status(400).json({
       success: false,
-      message: "Both 'category' and 'orderedNames[]' are required.",
+      message: "'name', 'category', and 'sort_order' are all required.",
+    });
+  }
+
+  const newOrder = Number(sort_order);
+  if (!Number.isInteger(newOrder) || newOrder < 1) {
+    return res.status(400).json({
+      success: false,
+      message: "'sort_order' must be a positive integer (1, 2, 3, ...).",
     });
   }
 
   try {
-    const notFound = [];
-    const alreadyCorrect = [];
-    let updatedCount = 0;
+    const product = await Product.findOne({ name, type: category });
 
-    // Update products in the provided order
-    for (let i = 0; i < orderedNames.length; i++) {
-      const productName = orderedNames[i];
-      const product = await Product.findOne({
-        name: productName,
-        type: category,
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: `Product '${name}' not found in category '${category}'.`,
       });
-
-      if (!product) {
-        notFound.push(
-          `❌ Not found: '${productName}' in category '${category}'`
-        );
-        continue;
-      }
-
-      if (product.sort_order === i + 1) {
-        alreadyCorrect.push(productName);
-        continue;
-      }
-
-      product.sort_order = i + 1;
-      await product.save();
-      updatedCount++;
     }
 
-    // Get all product names in the category
-    const allCategoryProducts = await Product.find({ type: category }).select(
-      "name"
-    );
-    const allProductNames = allCategoryProducts.map((p) => p.name);
+    const oldOrder = product.sort_order;
 
-    // Find products not mentioned in the orderedNames list
-    const notIncluded = allProductNames.filter(
-      (name) => !orderedNames.includes(name)
-    );
+    if (oldOrder === newOrder) {
+      return res.status(200).json({
+        success: true,
+        message: `Product '${name}' is already at position ${newOrder}.`,
+      });
+    }
+
+    if (oldOrder < newOrder) {
+      await Product.updateMany(
+        { type: category, sort_order: { $gt: oldOrder, $lte: newOrder } },
+        { $inc: { sort_order: -1 } }
+      );
+    } else {
+      await Product.updateMany(
+        { type: category, sort_order: { $gte: newOrder, $lt: oldOrder } },
+        { $inc: { sort_order: 1 } }
+      );
+    }
+
+    product.sort_order = newOrder;
+    await product.save();
 
     return res.status(200).json({
       success: true,
-      message: `✅ Updated ${updatedCount} products in '${category}' category.`,
-      updatedCount,
-      notFound,
-      alreadyCorrect,
-      notIncludedInRequest: notIncluded,
+      message: `Product '${name}' moved to position ${newOrder} in '${category}'.`,
+      product: {
+        name: product.name,
+        category: product.type,
+        sort_order: product.sort_order,
+      },
     });
   } catch (err) {
-    console.error("❌ Sort update error:", err);
+    console.error("Sort update error:", err);
     return res.status(500).json({
       success: false,
       message: "Internal server error while updating sort order.",
