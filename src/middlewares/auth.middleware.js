@@ -10,7 +10,6 @@ const publicPaths = [
   "/auth/verify-code-login",
   "/products",
   "/products/type",
-  "/reset-db",
   "/users",
   "/upload-images",
   "/sync-images",
