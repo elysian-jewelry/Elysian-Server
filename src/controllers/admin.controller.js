@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import ProductImage from "../models/productImage.js";
 import Cart from "../models/cart.js";
 import CartItem from "../models/cartItem.js";
+import GovOrderRate from "../models/govOrderRate.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,6 +74,146 @@ function primaryImageIndexFromUrls(urls) {
   });
   return idx >= 0 ? idx : 0;
 }
+
+function parsePositiveInt(value, fieldLabel) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) {
+    return {
+      error: `${fieldLabel} must be a positive integer.`,
+    };
+  }
+  return { value: n };
+}
+
+function parseNonNegativeCost(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return { error: "cost must be a finite number >= 0." };
+  }
+  return { value: n };
+}
+
+/** POST /admin/governorates/rates — create (single indexed write). */
+export const createGovOrderRate = async (req, res) => {
+  const idResult = parsePositiveInt(req.body.id, "id");
+  if (idResult.error) {
+    return res.status(400).json({ message: idResult.error });
+  }
+
+  const { name, cost } = req.body;
+  if (typeof name !== "string" || !name.trim()) {
+    return res.status(400).json({ message: "name must be a non-empty string." });
+  }
+
+  const costResult = parseNonNegativeCost(cost);
+  if (costResult.error) {
+    return res.status(400).json({ message: costResult.error });
+  }
+
+  try {
+    const doc = await GovOrderRate.create({
+      _id: idResult.value,
+      name: name.trim(),
+      cost: costResult.value,
+    });
+
+    return res.status(201).json({
+      message: "Governorate rate created.",
+      governorate: { id: doc._id, name: doc.name, cost: doc.cost },
+    });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({
+        message: "A governorate with this id or name already exists.",
+        keyValue: err.keyValue,
+      });
+    }
+    console.error("createGovOrderRate:", err);
+    return res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+};
+
+/** PUT /admin/governorates/rates/:id — partial update by primary key. */
+export const updateGovOrderRate = async (req, res) => {
+  const idResult = parsePositiveInt(req.params.id, "id");
+  if (idResult.error) {
+    return res.status(400).json({ message: idResult.error });
+  }
+
+  const { name, cost } = req.body;
+  const hasName = name !== undefined;
+  const hasCost = cost !== undefined;
+
+  if (!hasName && !hasCost) {
+    return res.status(400).json({
+      message: "Provide at least one of: name, cost.",
+    });
+  }
+
+  const $set = {};
+  if (hasName) {
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ message: "name must be a non-empty string." });
+    }
+    $set.name = name.trim();
+  }
+  if (hasCost) {
+    const costResult = parseNonNegativeCost(cost);
+    if (costResult.error) {
+      return res.status(400).json({ message: costResult.error });
+    }
+    $set.cost = costResult.value;
+  }
+
+  try {
+    const doc = await GovOrderRate.findByIdAndUpdate(
+      idResult.value,
+      { $set },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!doc) {
+      return res.status(404).json({ message: "Governorate rate not found." });
+    }
+
+    return res.status(200).json({
+      message: "Governorate rate updated.",
+      governorate: { id: doc._id, name: doc.name, cost: doc.cost },
+    });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({
+        message: "name already exists for another governorate.",
+        keyValue: err.keyValue,
+      });
+    }
+    console.error("updateGovOrderRate:", err);
+    return res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+};
+
+/** DELETE /admin/governorates/rates/:id — delete by primary key. */
+export const deleteGovOrderRate = async (req, res) => {
+  const idResult = parsePositiveInt(req.params.id, "id");
+  if (idResult.error) {
+    return res.status(400).json({ message: idResult.error });
+  }
+
+  try {
+    const doc = await GovOrderRate.findByIdAndDelete(idResult.value).lean();
+    if (!doc) {
+      return res.status(404).json({ message: "Governorate rate not found." });
+    }
+
+    return res.status(200).json({
+      message: "Governorate rate deleted.",
+      deleted: { id: doc._id, name: doc.name, cost: doc.cost },
+    });
+  } catch (err) {
+    console.error("deleteGovOrderRate:", err);
+    return res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+};
 
 export const deleteUserOrdersByEmail = async (req, res) => {
   const { email } = req.body;

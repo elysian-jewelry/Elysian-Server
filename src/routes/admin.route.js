@@ -10,7 +10,10 @@ import {
   addProductsWithVariants,
   getMonthlyOrderTotals,
   deleteProductsByNameAndType,
-  deleteUserOrdersByEmail
+  deleteUserOrdersByEmail,
+  createGovOrderRate,
+  updateGovOrderRate,
+  deleteGovOrderRate,
 } from "../controllers/admin.controller.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js"; 
 
@@ -42,6 +45,10 @@ router.delete("/admin/delete-products", deleteProductsByNameAndType);
 router.post("/admin/create-public-promocode", createPublicPromo);
 
 router.get("/admin/users", getAllUsersLatest);
+
+router.post("/admin/governorates/rates", createGovOrderRate);
+router.put("/admin/governorates/rates/:id", updateGovOrderRate);
+router.delete("/admin/governorates/rates/:id", deleteGovOrderRate);
 
 // 🚀 New manual trigger route
 router.post("/admin/run-missing-birthday-cron", async (req, res) => {

@@ -17,7 +17,7 @@ const publicPaths = [
   "/products/featured",
   "/upload-product-images",
   "/images",
-  "/governorates/rates",
+  
 ];
 
 export const authenticateJWT = (req, res, next) => {
