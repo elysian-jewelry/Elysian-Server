@@ -53,6 +53,27 @@ const looksPrimary = (f) =>
     f.toLowerCase().includes(k)
   );
 
+function isValidHttpUrl(s) {
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** Pick primary image index from URL list (filename hints), else 0 */
+function primaryImageIndexFromUrls(urls) {
+  let idx = urls.findIndex((url) => {
+    try {
+      return looksPrimary(path.basename(new URL(url).pathname));
+    } catch {
+      return false;
+    }
+  });
+  return idx >= 0 ? idx : 0;
+}
+
 export const deleteUserOrdersByEmail = async (req, res) => {
   const { email } = req.body;
 
@@ -461,6 +482,27 @@ export const addProductsWithVariants = async (req, res) => {
           message: `Product ${p.name}: 'is_new' must be a boolean`,
         });
       }
+
+      if (p.image_urls !== undefined) {
+        if (!Array.isArray(p.image_urls)) {
+          return res.status(400).json({
+            message: `Product ${p.name}: 'image_urls' must be an array of URL strings`,
+          });
+        }
+        for (let i = 0; i < p.image_urls.length; i++) {
+          const u = p.image_urls[i];
+          if (typeof u !== "string" || !u.trim()) {
+            return res.status(400).json({
+              message: `Product ${p.name}: image_urls[${i}] must be a non-empty string`,
+            });
+          }
+          if (!isValidHttpUrl(u.trim())) {
+            return res.status(400).json({
+              message: `Product ${p.name}: image_urls[${i}] must be a valid http(s) URL`,
+            });
+          }
+        }
+      }
     }
 
     // 2️⃣ Check duplicates (name + type)
@@ -507,6 +549,21 @@ export const addProductsWithVariants = async (req, res) => {
         );
 
         product.product_variants = variants.map((v) => v._id);
+        await product.save();
+      }
+
+      if (Array.isArray(p.image_urls) && p.image_urls.length > 0) {
+        const urls = p.image_urls.map((s) => s.trim());
+        const primaryI = primaryImageIndexFromUrls(urls);
+        const toInsert = urls.map((image_url, i) => ({
+          product_id: product._id,
+          image_url,
+          is_primary: i === primaryI,
+        }));
+        const createdImgs = await ProductImage.insertMany(toInsert, {
+          ordered: true,
+        });
+        product.images = createdImgs.map((doc) => doc._id);
         await product.save();
       }
 
@@ -648,16 +705,18 @@ export const updateProduct = async (req, res) => {
     size,
     color,
     variant_quantity,
+    variant_price,
+    new_size,
+    new_color,
+    add_variants,
   } = req.body;
 
-  // 🔴 Basic required validation
   if (!name || !type) {
     return res.status(400).json({
       message: "name and type are required.",
     });
   }
 
-  // 🔴 Optional new_name validation
   if (new_name !== undefined) {
     if (typeof new_name !== "string" || !new_name.trim()) {
       return res.status(400).json({
@@ -666,7 +725,6 @@ export const updateProduct = async (req, res) => {
     }
   }
 
-  // 🔴 Product quantity validation
   if (
     product_quantity !== undefined &&
     (typeof product_quantity !== "number" ||
@@ -677,7 +735,6 @@ export const updateProduct = async (req, res) => {
     });
   }
 
-  // 🔴 Optional price validation
   if (
     price !== undefined &&
     (typeof price !== "number" || !Number.isFinite(price))
@@ -687,21 +744,34 @@ export const updateProduct = async (req, res) => {
     });
   }
 
-  // 🔴 Optional is_new validation
   if (is_new !== undefined && typeof is_new !== "boolean") {
     return res.status(400).json({
       message: "is_new must be a boolean if provided.",
     });
   }
 
+  if (
+    variant_price !== undefined &&
+    (typeof variant_price !== "number" || !Number.isFinite(variant_price))
+  ) {
+    return res.status(400).json({
+      message: "variant_price must be a finite number if provided.",
+    });
+  }
+
+  if (add_variants !== undefined && !Array.isArray(add_variants)) {
+    return res.status(400).json({
+      message: "add_variants must be an array.",
+    });
+  }
+
   try {
-    // 1️⃣ Find product
     const product = await Product.findOne({ name, type });
     if (!product) {
       return res.status(404).json({ message: "Product not found." });
     }
 
-    // 2️⃣ Update product fields
+    // 1️⃣ Update product-level fields
     if (new_name !== undefined) product.name = new_name.trim();
     if (product_quantity !== undefined)
       product.stock_quantity = product_quantity;
@@ -710,33 +780,36 @@ export const updateProduct = async (req, res) => {
 
     await product.save();
 
-    // 3️⃣ Update ONE variant (size OR color)
+    // 2️⃣ Update ONE existing variant (find by size OR color)
     let updatedVariant = null;
     let carts_affected = 0;
     let cart_items_deleted = 0;
 
-    if (variant_quantity !== undefined) {
-      if (
-        typeof variant_quantity !== "number" ||
-        !Number.isFinite(variant_quantity)
-      ) {
-        return res.status(400).json({
-          message: "variant_quantity must be a finite number.",
-        });
+    const wantsVariantUpdate =
+      variant_quantity !== undefined ||
+      variant_price !== undefined ||
+      new_size !== undefined ||
+      new_color !== undefined;
+
+    if (wantsVariantUpdate) {
+      if (variant_quantity !== undefined) {
+        if (
+          typeof variant_quantity !== "number" ||
+          !Number.isFinite(variant_quantity)
+        ) {
+          return res.status(400).json({
+            message: "variant_quantity must be a finite number.",
+          });
+        }
       }
 
       const hasSize = size !== undefined;
       const hasColor = color !== undefined;
 
-      if (hasSize && hasColor) {
-        return res.status(400).json({
-          message: "Variant can have either size OR color, not both.",
-        });
-      }
-
       if (!hasSize && !hasColor) {
         return res.status(400).json({
-          message: "Provide either size or color to update variant stock.",
+          message:
+            "Provide size or color to identify the variant you want to update.",
         });
       }
 
@@ -746,9 +819,16 @@ export const updateProduct = async (req, res) => {
         ...(hasColor && { color }),
       };
 
+      const setFields = {};
+      if (variant_quantity !== undefined)
+        setFields.stock_quantity = variant_quantity;
+      if (variant_price !== undefined) setFields.price = variant_price;
+      if (new_size !== undefined) setFields.size = new_size;
+      if (new_color !== undefined) setFields.color = new_color;
+
       updatedVariant = await ProductVariant.findOneAndUpdate(
         variantQuery,
-        { $set: { stock_quantity: variant_quantity } },
+        { $set: setFields },
         { new: true }
       );
 
@@ -758,7 +838,6 @@ export const updateProduct = async (req, res) => {
         });
       }
 
-      // 🛒 If VARIANT stock becomes 0 → remove ONLY this variant from carts
       if (variant_quantity === 0) {
         const cartItemsToRemove = await CartItem.find({
           product_id: product._id,
@@ -768,7 +847,9 @@ export const updateProduct = async (req, res) => {
         if (cartItemsToRemove.length > 0) {
           const cartItemIds = cartItemsToRemove.map((ci) => ci._id);
           const cartIds = [
-            ...new Set(cartItemsToRemove.map((ci) => ci.cart_id.toString())),
+            ...new Set(
+              cartItemsToRemove.map((ci) => ci.cart_id.toString())
+            ),
           ];
 
           const deleteResult = await CartItem.deleteMany({
@@ -808,22 +889,67 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    // 4️⃣ Response-safe variants array
-    const variants = updatedVariant ? [updatedVariant] : [];
+    // 3️⃣ Add new variants
+    let addedVariants = [];
+
+    if (Array.isArray(add_variants) && add_variants.length > 0) {
+      for (const v of add_variants) {
+        if (typeof v.price !== "number" || !Number.isFinite(v.price)) {
+          return res.status(400).json({
+            message: "Each new variant must have a numeric price.",
+          });
+        }
+        if (!v.size && !v.color) {
+          return res.status(400).json({
+            message:
+              "Each new variant must have at least size or color.",
+          });
+        }
+      }
+
+      const newDocs = await ProductVariant.insertMany(
+        add_variants.map((v) => ({
+          product_id: product._id,
+          size: v.size || undefined,
+          color: v.color || undefined,
+          price: v.price,
+          stock_quantity: v.stock_quantity || 0,
+        }))
+      );
+
+      addedVariants = newDocs;
+
+      product.product_variants.push(...newDocs.map((d) => d._id));
+      await product.save();
+    }
+
+    const variants = [
+      ...(updatedVariant ? [updatedVariant] : []),
+      ...addedVariants,
+    ];
 
     return res.status(200).json({
       message: "Product updated successfully.",
       product,
       variants,
       variants_modified: updatedVariant ? 1 : 0,
+      variants_added: addedVariants.length,
       carts_affected,
       cart_items_deleted,
     });
   } catch (error) {
     console.error("Error updating product:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "Duplicate variant (same size/color already exists).",
+        error: error.keyValue,
+      });
+    }
+
     return res.status(500).json({
       message: "Internal server error",
-      error,
+      error: error.message,
     });
   }
 };

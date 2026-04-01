@@ -29,7 +29,7 @@ env_variables:
   EMAIL_PASS: "agwyvxpqwbaedfbe"
 
   # ─────── MONGODB ATLAS ───────
-  MONGO_URI: "mongodb+srv://elysianjewelryeg:8kzlEq5TmRS56zCQ@elysian.ot700qr.mongodb.net/?retryWrites=true&w=majority&appName=elysian"
+  MONGO_URI: "mongodb+srv://elysian_dev_user:dVV3voUkz7kBZZzS@elysian-dev.ijl6t8q.mongodb.net/elysian?retryWrites=true&w=majority&appName=elysian-dev"
 
   # ─────── GOOGLE SHEETS ───────
   GOOGLE_SPREAD_SHEET_ID: "1MVZJN51zzYDAeRpzrpPFGJ0dyOdm1Zxk1Jksv9nRWwM"
