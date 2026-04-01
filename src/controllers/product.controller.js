@@ -136,17 +136,19 @@ export const getProductsByType = async (req, res) => {
       });
     }
 
-    const products = await Product.find({ type })
-      .populate({
-        path: "images",
-        select: "image_url is_primary",
-        options: { limit: 4 }
-      })
-      .populate({
-        path: "product_variants",
-        select: "variant_id size color price stock_quantity"
-      })
-      .sort({ sort_order: 1 }); // MongoDB equivalent of ORDER BY product_id ASC
+    const populateImages = { path: "images", select: "image_url is_primary", options: { limit: 4 } };
+    const populateVariants = { path: "product_variants", select: "variant_id size color price stock_quantity" };
+
+    const ordered = await Product.find({ type, sort_order: { $gt: 0 } })
+      .populate(populateImages)
+      .populate(populateVariants)
+      .sort({ sort_order: 1 });
+
+    const unordered = await Product.find({ type, sort_order: { $lte: 0 } })
+      .populate(populateImages)
+      .populate(populateVariants);
+
+    const products = [...ordered, ...unordered];
 
     const formatted = products.map((product) => {
       const productObj = product.toObject();
@@ -228,17 +230,19 @@ const formatProductResponse = (productsRaw) => {
 
 export const getAllProducts = async (req, res) => {
   try {
-    const products = await Product.find()
-      .populate({
-        path: "images",
-        select: "image_url is_primary",
-        options: { limit: 4 },
-      })
-      .populate({
-        path: "product_variants",
-        select: "size price color stock_quantity",
-      })
-      .sort({ sort_order: 1 }); // equivalent to product_id ASC
+    const populateImages = { path: "images", select: "image_url is_primary", options: { limit: 4 } };
+    const populateVariants = { path: "product_variants", select: "size price color stock_quantity" };
+
+    const ordered = await Product.find({ sort_order: { $gt: 0 } })
+      .populate(populateImages)
+      .populate(populateVariants)
+      .sort({ sort_order: 1 });
+
+    const unordered = await Product.find({ sort_order: { $lte: 0 } })
+      .populate(populateImages)
+      .populate(populateVariants);
+
+    const products = [...ordered, ...unordered];
 
     res.status(200).json(formatProductResponse(products));
   } catch (error) {

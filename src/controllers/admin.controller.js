@@ -291,14 +291,20 @@ export const updateProductSortOrder = async (req, res) => {
       });
     }
 
-    if (oldOrder < newOrder) {
+    if (!oldOrder || oldOrder <= 0) {
+      // Product was never ordered — insert at the desired position
       await Product.updateMany(
-        { type: category, sort_order: { $gt: oldOrder, $lte: newOrder } },
+        { type: category, sort_order: { $gte: newOrder }, _id: { $ne: product._id } },
+        { $inc: { sort_order: 1 } }
+      );
+    } else if (oldOrder < newOrder) {
+      await Product.updateMany(
+        { type: category, sort_order: { $gt: oldOrder, $lte: newOrder }, _id: { $ne: product._id } },
         { $inc: { sort_order: -1 } }
       );
     } else {
       await Product.updateMany(
-        { type: category, sort_order: { $gte: newOrder, $lt: oldOrder } },
+        { type: category, sort_order: { $gte: newOrder, $lt: oldOrder }, _id: { $ne: product._id } },
         { $inc: { sort_order: 1 } }
       );
     }
