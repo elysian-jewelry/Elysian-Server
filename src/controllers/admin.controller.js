@@ -954,6 +954,102 @@ export const updateProduct = async (req, res) => {
   }
 };
 
+export const deleteVariant = async (req, res) => {
+  const { name, type, size, color } = req.body;
+
+  if (!name || !type) {
+    return res.status(400).json({
+      message: "name and type are required to identify the product.",
+    });
+  }
+
+  const hasSize = size !== undefined;
+  const hasColor = color !== undefined;
+
+  if (!hasSize && !hasColor) {
+    return res.status(400).json({
+      message: "Provide size or color to identify the variant to delete.",
+    });
+  }
+
+  try {
+    const product = await Product.findOne({ name, type });
+    if (!product) {
+      return res.status(404).json({ message: "Product not found." });
+    }
+
+    const variantQuery = {
+      product_id: product._id,
+      ...(hasSize && { size }),
+      ...(hasColor && { color }),
+    };
+
+    const variant = await ProductVariant.findOne(variantQuery);
+    if (!variant) {
+      return res.status(404).json({ message: "Variant not found." });
+    }
+
+    // Remove from carts first
+    const cartItemsToRemove = await CartItem.find({
+      product_id: product._id,
+      variant_id: variant._id,
+    });
+
+    let cart_items_deleted = 0;
+    let carts_affected = 0;
+
+    if (cartItemsToRemove.length > 0) {
+      const cartItemIds = cartItemsToRemove.map((ci) => ci._id);
+      const cartIds = [
+        ...new Set(cartItemsToRemove.map((ci) => ci.cart_id.toString())),
+      ];
+
+      const deleteResult = await CartItem.deleteMany({
+        _id: { $in: cartItemIds },
+      });
+      cart_items_deleted = deleteResult.deletedCount || 0;
+
+      await Cart.updateMany(
+        { _id: { $in: cartIds } },
+        { $pull: { items: { $in: cartItemIds } } }
+      );
+
+      for (const cartId of cartIds) {
+        const cart = await Cart.findById(cartId).populate({
+          path: "items",
+          populate: [{ path: "product_id" }, { path: "variant_id" }],
+        });
+        if (!cart) continue;
+        cart.total_price = cart.items.reduce((sum, item) => {
+          const itemPrice =
+            item.variant_id?.price ?? item.product_id?.price ?? 0;
+          return sum + itemPrice * item.quantity;
+        }, 0);
+        await cart.save();
+      }
+
+      carts_affected = cartIds.length;
+    }
+
+    await ProductVariant.deleteOne({ _id: variant._id });
+
+    product.product_variants.pull(variant._id);
+    await product.save();
+
+    return res.status(200).json({
+      message: "Variant deleted successfully.",
+      deleted_variant: variant,
+      carts_affected,
+      cart_items_deleted,
+    });
+  } catch (error) {
+    console.error("Error deleting variant:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
 
 export const createPublicPromo = async (req, res) => {
   try {

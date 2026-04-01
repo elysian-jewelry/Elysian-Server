@@ -1,6 +1,11 @@
 import jwt from "jsonwebtoken";
 
-const excludedPaths = [
+const ADMIN_EMAILS = new Set([
+  "samirelbatal0@gmail.com",
+  "loujineetahaa@gmail.com",
+]);
+
+const publicPaths = [
   "/auth/login",
   "/auth/verify-code-login",
   "/products",
@@ -13,23 +18,11 @@ const excludedPaths = [
   "/products/featured",
   "/upload-product-images",
   "/images",
-  "/admin/create-public-promocode",
-  "/admin/users",
-  "/admin/run-missing-birthday-cron",
-  "/admin/orders/stats/monthly",
-  "/admin/sync-product-images",
-  "/admin/add-products",
-  "/admin/delete-products",
-  "/admin/update-product",
-  "/admin/delete-user-orders-by-email",
-  "/admin/update-sort-order",
 ];
 
 export const authenticateJWT = (req, res, next) => {
-  
-   // ✅ Exclude any route that starts with "/public"
-  if (excludedPaths.some((path) => req.path.startsWith(path))) {
-    return next(); // Skip JWT check for public routes
+  if (publicPaths.some((p) => req.path.startsWith(p))) {
+    return next();
   }
 
   const authHeader = req.headers.authorization;
@@ -42,9 +35,14 @@ export const authenticateJWT = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // Attach user info to request
-    console.log("Decoded JWT:", decoded); // Log the decoded token for debugging
-    
+    req.user = decoded;
+
+    if (req.path.startsWith("/admin/")) {
+      if (!decoded.email || !ADMIN_EMAILS.has(decoded.email.toLowerCase())) {
+        return res.status(403).json({ message: "Admin access denied." });
+      }
+    }
+
     next();
   } catch (err) {
     return res.status(403).json({ message: "Invalid or expired token" });

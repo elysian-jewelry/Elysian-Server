@@ -3,6 +3,7 @@ import {
   rebuildAllProductImages,
   getAllUsersLatest,
   updateProduct,
+  deleteVariant,
   createPublicPromo,
   updateProductSortOrder,
   getAllOrdersFull,
@@ -26,6 +27,8 @@ router.get("/admin/orders/stats/monthly", getMonthlyOrderTotals);
 
 // Update product quantity by name and type
 router.put("/admin/update-product", updateProduct);
+
+router.delete("/admin/delete-variant", deleteVariant);
 
 router.put("/admin/update-sort-order", updateProductSortOrder);
 
