@@ -1,6 +1,6 @@
 import express from "express";
 import {
-  rebuildAllProductImages,
+  syncFolderImagesToProducts,
   getAllUsersLatest,
   updateProduct,
   deleteVariant,
@@ -24,7 +24,7 @@ router.delete(
   deleteUserOrdersByEmail
 );
 
-router.post("/admin/sync-product-images", rebuildAllProductImages);
+router.post("/admin/sync-folder-images-to-products", syncFolderImagesToProducts);
 
 router.get("/admin/orders/stats/monthly", getMonthlyOrderTotals);
 

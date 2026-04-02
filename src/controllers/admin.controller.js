@@ -262,28 +262,34 @@ export const deleteUserOrdersByEmail = async (req, res) => {
 };
 
 /**
- * POST /admin/rebuild-product-images
- * 1) DELETE ALL docs from product_images
- * 2) Clear images array on all products
- * 3) Scan disk, insert ALL images, set IMG_1 (or first) primary, and link to products
+ * POST /admin/sync-folder-images-to-products
+ * 1) Delete all product_images docs and clear images[] on every product (no duplicate URLs).
+ * 2) Scan disk and attach images per folder; primary = first file after sort.
  */
-export const rebuildAllProductImages = async (req, res) => {
+export const syncFolderImagesToProducts = async (req, res) => {
+  const orphanByCategory = Object.fromEntries(
+    [...PRODUCT_TYPES].map((t) => [t, 0])
+  );
+
   const summary = {
+    success: true,
     imagesRoot: IMAGES_ROOT,
     baseUrl: BASE_URL,
-    clearedProductImages: 0,
-    productsCleared: 0,
-    processedProducts: 0,
-    createdImages: 0,
-    updatedProducts: 0,
-    missingProducts: [],
-    productsWithoutImages: [], // 👈 NEW
-    skippedTypes: [],
+    cleared_product_images: 0,
+    products_cleared_image_refs: 0,
+    products_synced_from_disk: 0,
+    images_inserted: 0,
+    products_cleared_empty_folders: 0,
+    products_with_images: 0,
+    products_without_images: 0,
+    orphan_disk_images_by_category: orphanByCategory,
+    orphan_disk_images_total: 0,
+    missing_product_folders: [],
+    skipped_top_level_types: [],
     errors: [],
   };
 
   try {
-    // Sanity: images root
     const st = await fs.stat(IMAGES_ROOT).catch(() => null);
     if (!st?.isDirectory()) {
       return res.status(400).json({
@@ -292,44 +298,44 @@ export const rebuildAllProductImages = async (req, res) => {
       });
     }
 
-    // 1) Delete all from product_images
     const delRes = await ProductImage.deleteMany({});
-    summary.clearedProductImages = delRes.deletedCount || 0;
+    summary.cleared_product_images = delRes.deletedCount || 0;
 
-    // 2) Clear images array on all products
     const clearRes = await Product.updateMany({}, { $set: { images: [] } });
-    summary.productsCleared = clearRes.modifiedCount || 0;
+    summary.products_cleared_image_refs = clearRes.modifiedCount || 0;
 
-    // 3) Walk folders: <images>/<Type>/<ProductName>/*
     const typeDirs = await fs.readdir(IMAGES_ROOT, { withFileTypes: true });
 
     for (const t of typeDirs) {
       if (!t.isDirectory()) continue;
       const typeName = t.name;
       if (!PRODUCT_TYPES.has(typeName)) {
-        summary.skippedTypes.push(typeName);
+        summary.skipped_top_level_types.push(typeName);
         continue;
       }
 
       const typePath = path.join(IMAGES_ROOT, typeName);
-      const productDirs = await fs.readdir(typePath, { withFileTypes: true });
+      const typeEntries = await fs.readdir(typePath, { withFileTypes: true });
 
-      for (const p of productDirs) {
+      const looseFiles = typeEntries.filter(
+        (e) =>
+          e.isFile() &&
+          ALLOWED.has(path.extname(e.name).toLowerCase())
+      );
+      if (looseFiles.length > 0) {
+        summary.orphan_disk_images_by_category[typeName] += looseFiles.length;
+      }
+
+      for (const p of typeEntries) {
         if (!p.isDirectory()) continue;
         const productName = p.name;
         const productPath = path.join(typePath, productName);
 
-        // Find product by (name, type)
         const product = await Product.findOne({
           name: productName,
           type: typeName,
         });
-        if (!product) {
-          summary.missingProducts.push(`${typeName} / ${productName}`);
-          continue;
-        }
 
-        // Collect image files
         const entries = await fs.readdir(productPath, { withFileTypes: true });
         const files = entries
           .filter((e) => e.isFile())
@@ -337,11 +343,21 @@ export const rebuildAllProductImages = async (req, res) => {
           .filter((n) => ALLOWED.has(path.extname(n).toLowerCase()))
           .sort();
 
-        if (files.length === 0) continue;
+        if (!product) {
+          if (files.length > 0) {
+            summary.orphan_disk_images_by_category[typeName] += files.length;
+            summary.missing_product_folders.push(`${typeName} / ${productName}`);
+          }
+          continue;
+        }
 
-        const primaryFile = files.find(looksPrimary) || files[0];
+        if (files.length === 0) {
+          summary.products_cleared_empty_folders += 1;
+          continue;
+        }
 
-        // Build docs for insertMany
+        const primaryFile = files[0];
+
         const toInsert = files.map((filename) => {
           const rel = urlJoinEncoded("images", typeName, productName, filename);
           const image_url = `${BASE_URL}/${rel}`;
@@ -352,38 +368,39 @@ export const rebuildAllProductImages = async (req, res) => {
           };
         });
 
-        // Insert all images for this product
         const created = await ProductImage.insertMany(toInsert, {
           ordered: true,
         });
-        summary.createdImages += created.length;
+        summary.images_inserted += created.length;
 
-        // Link back to product.images (replace entire array)
         product.images = created.map((doc) => doc._id);
         await product.save();
 
-        summary.processedProducts += 1;
-        summary.updatedProducts += 1;
+        summary.products_synced_from_disk += 1;
       }
     }
 
-    // 4) Find products that still have no images
-    const productsWithoutImages = await Product.find({
-      $or: [{ images: { $exists: false } }, { images: { $size: 0 } }],
-    })
-      .select("_id name type")
-      .lean();
+    summary.orphan_disk_images_total = Object.values(
+      summary.orphan_disk_images_by_category
+    ).reduce((a, b) => a + b, 0);
 
-    summary.productsWithoutImages = productsWithoutImages.map((p) => ({
-      id: p._id,
-      name: p.name,
-      type: p.type,
-    }));
+    const [withImg, withoutImg] = await Promise.all([
+      Product.countDocuments({
+        $expr: { $gt: [{ $size: { $ifNull: ["$images", []] } }, 0] },
+      }),
+      Product.countDocuments({
+        $expr: { $eq: [{ $size: { $ifNull: ["$images", []] } }, 0] },
+      }),
+    ]);
 
-    return res.status(200).json({ success: true, ...summary });
+    summary.products_with_images = withImg;
+    summary.products_without_images = withoutImg;
+
+    return res.status(200).json(summary);
   } catch (err) {
+    summary.success = false;
     summary.errors.push(err.message);
-    return res.status(500).json({ success: false, ...summary });
+    return res.status(500).json(summary);
   }
 };
 
