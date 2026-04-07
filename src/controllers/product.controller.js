@@ -67,7 +67,7 @@ export const getNewArrivalProducts = async (req, res) => {
       {
         $match: {
           type: {
-            $in: ["Earrings", "Hand Chains", "Necklaces", "Bracelets"],
+            $in: ["Earrings", "Hand Chains", "Necklaces", "Bracelets", "Body Chains", "Rings" , "Back Chains"],
           },
           is_new: true,
           stock_quantity: { $ne: 0 },
