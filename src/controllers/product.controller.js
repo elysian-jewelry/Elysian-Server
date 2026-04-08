@@ -118,27 +118,18 @@ export const getNewArrivalProducts = async (req, res) => {
       { $sort: { created_at: -1 } },
     ]);
 
-    const populatedProducts = await Product.populate(products, {
+    let populatedProducts = await Product.populate(products, {
       path: "images",
       select: "image_url is_primary",
       options: { limit: 4 },
     });
 
-    const response = populatedProducts.map((p) => ({
-      id: p._id,
-      name: p.name,
-      type: p.type,
-      price: p.price,
-      stock_quantity: p.stock_quantity,
-      is_new: p.is_new,
-      product_variants: p.product_variants || [],
-      images: (p.images || []).map((img) => ({
-        image_url: img.image_url,
-        is_primary: img.is_primary,
-      })),
-    }));
+    populatedProducts = await Product.populate(populatedProducts, {
+      path: "product_variants",
+      select: "size price color stock_quantity",
+    });
 
-    return res.status(200).json(response);
+    return res.status(200).json(formatProductResponse(populatedProducts));
   } catch (error) {
     console.error("Error fetching new arrivals:", error);
     return res.status(500).json({
@@ -215,7 +206,10 @@ export const getProductsByType = async (req, res) => {
 
 const formatProductResponse = (productsRaw) => {
   return productsRaw.map(product => {
-    const plain = product.toObject();
+    const plain =
+      typeof product.toObject === "function"
+        ? product.toObject()
+        : { ...product };
 
       // 🆕 Sort images so primary image comes first
     if (plain.images && plain.images.length > 0) {
