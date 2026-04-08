@@ -76,6 +76,7 @@ export const getNewArrivalProducts = async (req, res) => {
               "Body Chains",
               "Rings",
               "Back Chains",
+              "Waist Chains",
             ],
           },
           is_new: true,
