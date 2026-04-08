@@ -71,10 +71,10 @@ export const getNewArrivalProducts = async (req, res) => {
           },
           is_new: true,
           stock_quantity: { $ne: 0 },
-          $or: [
-            { product_variants: { $exists: false } },
-            { product_variants: { $size: 0 } },
-          ],
+          // $or: [
+          //   { product_variants: { $exists: false } },
+          //   { product_variants: { $size: 0 } },
+          // ],
         },
       },
 
@@ -82,16 +82,16 @@ export const getNewArrivalProducts = async (req, res) => {
       { $sort: { created_at: -1 } },
 
       // ONE product per category
-      {
-        $group: {
-          _id: "$type",
-          product: { $first: "$$ROOT" },
-        },
-      },
+      // {
+      //   $group: {
+      //     _id: "$type",
+      //     product: { $first: "$$ROOT" },
+      //   },
+      // },
 
-      { $replaceRoot: { newRoot: "$product" } },
+      // { $replaceRoot: { newRoot: "$product" } },
 
-      { $limit: 4 },
+      // { $limit: 4 },
     ]);
 
     // Populate images
