@@ -1,14 +1,6 @@
 import Product from "../models/product.js";
 import OrderItem from "../models/orderItem.js";
 
-// New arrivals based on name and type
-const NEW_ARRIVALS = [
-  { name: "Double The Bling Drop", type: "Necklaces" },
-  { name: "Vertical Gleam", type: "Body Chains" },
-  { name: "Marly", type: "Hand Chains" },
-  { name: "Seashell", type: "Necklaces" }
-];
-
 export const getFeaturedProducts = async (req, res) => {
   try {
     // 1️⃣ Aggregate most ordered products
