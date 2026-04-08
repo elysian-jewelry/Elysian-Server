@@ -61,47 +61,68 @@ export const getFeaturedProducts = async (req, res) => {
   }
 };
 
+
 export const getNewArrivalProducts = async (req, res) => {
   try {
     const products = await Product.aggregate([
       {
         $match: {
           type: {
-            $in: ["Earrings", "Hand Chains", "Necklaces", "Bracelets", "Body Chains", "Rings" , "Back Chains"],
+            $in: [
+              "Earrings",
+              "Hand Chains",
+              "Necklaces",
+              "Bracelets",
+              "Body Chains",
+              "Rings",
+              "Back Chains",
+            ],
           },
           is_new: true,
-          stock_quantity: { $ne: 0 },
-          // $or: [
-          //   { product_variants: { $exists: false } },
-          //   { product_variants: { $size: 0 } },
-          // ],
+
+          // keep product if:
+          // 1) main stock > 0
+          // OR
+          // 2) it has variants (even if their stock is 0)
+          $or: [
+            { stock_quantity: { $gt: 0 } },
+            { product_variants: { $exists: true, $ne: [] } },
+          ],
         },
       },
 
-      // newest per category
+      // newest first
       { $sort: { created_at: -1 } },
 
-      // ONE product per category
-      // {
-      //   $group: {
-      //     _id: "$type",
-      //     product: { $first: "$$ROOT" },
-      //   },
-      // },
+      // group by category
+      {
+        $group: {
+          _id: "$type",
+          products: { $push: "$$ROOT" },
+        },
+      },
 
-      // { $replaceRoot: { newRoot: "$product" } },
+      // max 2 per category
+      {
+        $project: {
+          products: { $slice: ["$products", 2] },
+        },
+      },
 
-      // { $limit: 4 },
+      // flatten back
+      { $unwind: "$products" },
+      { $replaceRoot: { newRoot: "$products" } },
+
+      // optional final sort
+      { $sort: { created_at: -1 } },
     ]);
 
-    // Populate images
     const populatedProducts = await Product.populate(products, {
       path: "images",
       select: "image_url is_primary",
       options: { limit: 4 },
     });
 
-    // ✅ MANUAL RESPONSE FORMAT (NO toObject)
     const response = populatedProducts.map((p) => ({
       id: p._id,
       name: p.name,
@@ -109,6 +130,7 @@ export const getNewArrivalProducts = async (req, res) => {
       price: p.price,
       stock_quantity: p.stock_quantity,
       is_new: p.is_new,
+      product_variants: p.product_variants || [],
       images: (p.images || []).map((img) => ({
         image_url: img.image_url,
         is_primary: img.is_primary,
