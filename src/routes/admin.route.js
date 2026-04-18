@@ -1,10 +1,13 @@
 import express from "express";
 import {
   syncFolderImagesToProducts,
+  syncLocalImagesToGcsAndMongo,
   getAllUsersLatest,
   updateProduct,
   deleteVariant,
   createPublicPromo,
+  getAllPromoCodes,
+  deletePromoCodeById,
   updateProductSortOrder,
   getAllOrdersFull,
   addProductsWithVariants,
@@ -15,43 +18,67 @@ import {
   updateGovOrderRate,
   deleteGovOrderRate,
 } from "../controllers/admin.controller.js";
-import { runMissingBirthdayReminder } from "../controllers/cron.controller.js"; 
+import { uploadProductImagesMulter } from "../middlewares/multerProductImages.middleware.js";
+import { runMissingBirthdayReminder } from "../controllers/cron.controller.js";
 
 const router = express.Router();
 
-router.delete(
-  "/admin/delete-user-orders-by-email",
-  deleteUserOrdersByEmail
+router.delete("/admin/users/orders", deleteUserOrdersByEmail);
+
+router.post(
+  "/admin/products/images/sync/local-folders",
+  syncFolderImagesToProducts
 );
 
-router.post("/admin/sync-folder-images-to-products", syncFolderImagesToProducts);
+router.post(
+  "/admin/products/images/sync/cloud-storage",
+  syncLocalImagesToGcsAndMongo
+);
 
-router.get("/admin/orders/stats/monthly", getMonthlyOrderTotals);
+router.get("/admin/orders/statistics/monthly", getMonthlyOrderTotals);
 
-// Update product quantity by name and type
-router.put("/admin/update-product", updateProduct);
+router.put("/admin/products", updateProduct);
 
-router.delete("/admin/delete-variant", deleteVariant);
+router.delete("/admin/products/variants", deleteVariant);
 
-router.put("/admin/update-sort-order", updateProductSortOrder);
+router.put("/admin/products/sort-order", updateProductSortOrder);
 
-// New route to get all users and their order stats
-router.get("/admin/users-with-orders", getAllOrdersFull);
+router.get("/admin/orders/users", getAllOrdersFull);
 
-router.post("/admin/add-products", addProductsWithVariants);
+router.post(
+  "/admin/products",
+  (req, res, next) => {
+    const ct = (req.headers["content-type"] || "").toLowerCase();
+    if (!ct.includes("multipart/form-data")) {
+      return res.status(400).json({
+        message: "This endpoint only accepts multipart/form-data",
+      });
+    }
+    uploadProductImagesMulter(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({
+          message: err.message || "Image upload parsing failed",
+        });
+      }
+      next();
+    });
+  },
+  addProductsWithVariants
+);
 
-router.delete("/admin/delete-products", deleteProductsByNameAndType);
+router.delete("/admin/products", deleteProductsByNameAndType);
 
-router.post("/admin/create-public-promocode", createPublicPromo);
+router.get("/admin/promo-codes", getAllPromoCodes);
+router.post("/admin/promo-codes", createPublicPromo);
+router.delete("/admin/promo-codes/:id", deletePromoCodeById);
 
 router.get("/admin/users", getAllUsersLatest);
 
-router.post("/admin/governorates/rates", createGovOrderRate);
-router.put("/admin/governorates/rates/:id", updateGovOrderRate);
-router.delete("/admin/governorates/rates/:id", deleteGovOrderRate);
+router.post("/admin/delivery-rates/governorates", createGovOrderRate);
+router.put("/admin/delivery-rates/governorates/:id", updateGovOrderRate);
+router.delete("/admin/delivery-rates/governorates/:id", deleteGovOrderRate);
 
-// 🚀 New manual trigger route
-router.post("/admin/run-missing-birthday-cron", async (req, res) => {
+router.post("/admin/jobs/birthday-reminder", async (req, res) => {
   try {
     const result = await runMissingBirthdayReminder();
     res.json({ success: true, result });

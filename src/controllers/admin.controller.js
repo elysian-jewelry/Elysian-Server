@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Product from "../models/product.js";
 import User from "../models/user.js";
 import Order from "../models/order.js";
@@ -11,6 +12,12 @@ import ProductImage from "../models/productImage.js";
 import Cart from "../models/cart.js";
 import CartItem from "../models/cartItem.js";
 import GovOrderRate from "../models/govOrderRate.js";
+import {
+  uploadImageBufferToGcs,
+  deleteObjectsByPublicUrls,
+  deleteAllObjectsInBucket,
+  deleteAllGcsObjectsUnderProductPrefix,
+} from "../services/gcsImageUpload.service.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -93,7 +100,7 @@ function parseNonNegativeCost(value) {
   return { value: n };
 }
 
-/** POST /admin/governorates/rates — create (single indexed write). */
+/** POST /admin/delivery-rates/governorates — create (single indexed write). */
 export const createGovOrderRate = async (req, res) => {
   const idResult = parsePositiveInt(req.body.id, "id");
   if (idResult.error) {
@@ -133,7 +140,7 @@ export const createGovOrderRate = async (req, res) => {
   }
 };
 
-/** PUT /admin/governorates/rates/:id — partial update by primary key. */
+/** PUT /admin/delivery-rates/governorates/:id — partial update by primary key. */
 export const updateGovOrderRate = async (req, res) => {
   const idResult = parsePositiveInt(req.params.id, "id");
   if (idResult.error) {
@@ -192,7 +199,7 @@ export const updateGovOrderRate = async (req, res) => {
   }
 };
 
-/** DELETE /admin/governorates/rates/:id — delete by primary key. */
+/** DELETE /admin/delivery-rates/governorates/:id — delete by primary key. */
 export const deleteGovOrderRate = async (req, res) => {
   const idResult = parsePositiveInt(req.params.id, "id");
   if (idResult.error) {
@@ -262,7 +269,7 @@ export const deleteUserOrdersByEmail = async (req, res) => {
 };
 
 /**
- * POST /admin/sync-folder-images-to-products
+ * POST /admin/products/images/sync/local-folders
  * 1) Delete all product_images docs and clear images[] on every product (no duplicate URLs).
  * 2) Scan disk and attach images per folder; primary = first file after sort.
  */
@@ -377,6 +384,177 @@ export const syncFolderImagesToProducts = async (req, res) => {
         await product.save();
 
         summary.products_synced_from_disk += 1;
+      }
+    }
+
+    summary.orphan_disk_images_total = Object.values(
+      summary.orphan_disk_images_by_category
+    ).reduce((a, b) => a + b, 0);
+
+    const [withImg, withoutImg] = await Promise.all([
+      Product.countDocuments({
+        $expr: { $gt: [{ $size: { $ifNull: ["$images", []] } }, 0] },
+      }),
+      Product.countDocuments({
+        $expr: { $eq: [{ $size: { $ifNull: ["$images", []] } }, 0] },
+      }),
+    ]);
+
+    summary.products_with_images = withImg;
+    summary.products_without_images = withoutImg;
+
+    return res.status(200).json(summary);
+  } catch (err) {
+    summary.success = false;
+    summary.errors.push(err.message);
+    return res.status(500).json(summary);
+  }
+};
+
+function mimeFromImageFilename(name) {
+  const ext = path.extname(name).toLowerCase();
+  const map = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+  };
+  return map[ext] || "application/octet-stream";
+}
+
+/**
+ * POST /admin/products/images/sync/cloud-storage
+ * 1) Delete all objects in the GCS bucket
+ * 2) Delete all product_images rows and clear images[] on every product
+ * 3) Scan IMAGES_ROOT (same layout as local-folders sync), upload each file to GCS, save URLs in MongoDB
+ */
+export const syncLocalImagesToGcsAndMongo = async (req, res) => {
+  const orphanByCategory = Object.fromEntries(
+    [...PRODUCT_TYPES].map((t) => [t, 0])
+  );
+
+  const summary = {
+    success: true,
+    imagesRoot: IMAGES_ROOT,
+    bucket: process.env.GCS_BUCKET_NAME || "elysian-images",
+    gcs_bucket_cleared: false,
+    cleared_product_images: 0,
+    products_cleared_image_refs: 0,
+    products_synced: 0,
+    images_inserted: 0,
+    products_cleared_empty_folders: 0,
+    products_with_images: 0,
+    products_without_images: 0,
+    orphan_disk_images_by_category: orphanByCategory,
+    orphan_disk_images_total: 0,
+    missing_product_folders: [],
+    skipped_top_level_types: [],
+    errors: [],
+  };
+
+  try {
+    const st = await fs.stat(IMAGES_ROOT).catch(() => null);
+    if (!st?.isDirectory()) {
+      return res.status(400).json({
+        success: false,
+        message: `Images root not found: ${IMAGES_ROOT}`,
+      });
+    }
+
+    await deleteAllObjectsInBucket();
+    summary.gcs_bucket_cleared = true;
+
+    const delRes = await ProductImage.deleteMany({});
+    summary.cleared_product_images = delRes.deletedCount || 0;
+
+    const clearRes = await Product.updateMany({}, { $set: { images: [] } });
+    summary.products_cleared_image_refs = clearRes.modifiedCount || 0;
+
+    const typeDirs = await fs.readdir(IMAGES_ROOT, { withFileTypes: true });
+
+    for (const t of typeDirs) {
+      if (!t.isDirectory()) continue;
+      const typeName = t.name;
+      if (!PRODUCT_TYPES.has(typeName)) {
+        summary.skipped_top_level_types.push(typeName);
+        continue;
+      }
+
+      const typePath = path.join(IMAGES_ROOT, typeName);
+      const typeEntries = await fs.readdir(typePath, { withFileTypes: true });
+
+      const looseFiles = typeEntries.filter(
+        (e) =>
+          e.isFile() &&
+          ALLOWED.has(path.extname(e.name).toLowerCase())
+      );
+      if (looseFiles.length > 0) {
+        summary.orphan_disk_images_by_category[typeName] += looseFiles.length;
+      }
+
+      for (const p of typeEntries) {
+        if (!p.isDirectory()) continue;
+        const productName = p.name;
+        const productPath = path.join(typePath, productName);
+
+        const product = await Product.findOne({
+          name: productName,
+          type: typeName,
+        });
+
+        const entries = await fs.readdir(productPath, { withFileTypes: true });
+        const files = entries
+          .filter((e) => e.isFile())
+          .map((e) => e.name)
+          .filter((n) => ALLOWED.has(path.extname(n).toLowerCase()))
+          .sort();
+
+        if (!product) {
+          if (files.length > 0) {
+            summary.orphan_disk_images_by_category[typeName] += files.length;
+            summary.missing_product_folders.push(`${typeName} / ${productName}`);
+          }
+          continue;
+        }
+
+        if (files.length === 0) {
+          summary.products_cleared_empty_folders += 1;
+          continue;
+        }
+
+        const primaryFile = files[0];
+        const imageUrls = [];
+
+        for (const filename of files) {
+          const fullPath = path.join(productPath, filename);
+          const buffer = await fs.readFile(fullPath);
+          const mimetype = mimeFromImageFilename(filename);
+          const image_url = await uploadImageBufferToGcs(
+            buffer,
+            filename,
+            mimetype,
+            typeName,
+            productName
+          );
+          imageUrls.push({ image_url, filename });
+        }
+
+        const toInsert = imageUrls.map(({ image_url, filename }) => ({
+          product_id: product._id,
+          image_url,
+          is_primary: filename === primaryFile,
+        }));
+
+        const created = await ProductImage.insertMany(toInsert, {
+          ordered: true,
+        });
+        summary.images_inserted += created.length;
+
+        product.images = created.map((doc) => doc._id);
+        await product.save();
+
+        summary.products_synced += 1;
       }
     }
 
@@ -553,6 +731,28 @@ export const deleteProductsByNameAndType = async (req, res) => {
 
     const matchedIds = matchedProducts.map((p) => p._id);
 
+    const imageDocs = await ProductImage.find({
+      product_id: { $in: matchedIds },
+    })
+      .select("image_url")
+      .lean();
+    const imageUrls = imageDocs.map((d) => d.image_url).filter(Boolean);
+
+    const folderDeletes = await Promise.allSettled(
+      matchedProducts.map((mp) =>
+        deleteAllGcsObjectsUnderProductPrefix(mp.type, mp.name)
+      )
+    );
+    const folderFailed = folderDeletes.filter((r) => r.status === "rejected");
+    if (folderFailed.length > 0) {
+      console.error(
+        "GCS product folder delete failures:",
+        folderFailed.map((r) => r.reason?.message || r.reason)
+      );
+    }
+
+    await deleteObjectsByPublicUrls(imageUrls);
+
     // 1️⃣ Delete variants
     await ProductVariant.deleteMany({
       product_id: { $in: matchedIds },
@@ -597,144 +797,198 @@ const ALLOWED_TYPES = [
 
 export const addProductsWithVariants = async (req, res) => {
   try {
-    // 🔴 0️⃣ Ensure body is valid JSON object
     if (!req.body || typeof req.body !== "object") {
       return res.status(400).json({
-        message: "Invalid JSON body",
+        message: "Invalid request body",
       });
     }
-    const { products } = req.body;
 
-    if (!Array.isArray(products) || products.length === 0) {
+    const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+    if (uploadedFiles.length === 0) {
       return res.status(400).json({
-        message: "products must be a non-empty array",
+        message:
+          "At least one image file is required (multipart field name: images)",
       });
     }
 
-    // 1️⃣ Validate required fields
-    for (const p of products) {
-      if (!p.name || !p.type || typeof p.price !== "number") {
+    const rawProduct = req.body.product;
+    if (rawProduct == null || String(rawProduct).trim() === "") {
+      return res.status(400).json({
+        message: 'Form field "product" is required (JSON object as a string)',
+      });
+    }
+    if (typeof rawProduct !== "string") {
+      return res.status(400).json({
+        message: "product must be a JSON string in the multipart form",
+      });
+    }
+    let p;
+    try {
+      p = JSON.parse(rawProduct);
+    } catch {
+      return res.status(400).json({ message: "product must be valid JSON" });
+    }
+    if (!p || typeof p !== "object" || Array.isArray(p)) {
+      return res.status(400).json({
+        message: "product must be a single JSON object",
+      });
+    }
+
+    if (typeof p.price === "string" && String(p.price).trim() !== "") {
+      const n = Number(p.price);
+      if (!Number.isFinite(n)) {
+        return res.status(400).json({ message: "price must be a number" });
+      }
+      p.price = n;
+    }
+
+    if (p.stock_quantity === undefined || p.stock_quantity === null) {
+      return res.status(400).json({ message: "stock_quantity is required" });
+    }
+    if (typeof p.stock_quantity === "string") {
+      if (String(p.stock_quantity).trim() === "") {
+        return res.status(400).json({ message: "stock_quantity is required" });
+      }
+      p.stock_quantity = Number(p.stock_quantity);
+    }
+    if (
+      typeof p.stock_quantity !== "number" ||
+      !Number.isFinite(p.stock_quantity)
+    ) {
+      return res.status(400).json({
+        message: "stock_quantity must be a finite number",
+      });
+    }
+
+    if (p.sort_order === undefined || p.sort_order === null) {
+      return res.status(400).json({ message: "sort_order is required" });
+    }
+    if (typeof p.sort_order === "string") {
+      if (String(p.sort_order).trim() === "") {
+        return res.status(400).json({ message: "sort_order is required" });
+      }
+      p.sort_order = Number(p.sort_order);
+    }
+    if (typeof p.sort_order !== "number" || !Number.isFinite(p.sort_order)) {
+      return res.status(400).json({
+        message: "sort_order must be a finite number",
+      });
+    }
+
+    if (p.is_new === undefined || p.is_new === null || p.is_new === "") {
+      return res.status(400).json({ message: "is_new is required" });
+    }
+    if (typeof p.is_new === "string") {
+      const s = p.is_new.toLowerCase().trim();
+      if (s === "true" || s === "1") {
+        p.is_new = true;
+      } else if (s === "false" || s === "0") {
+        p.is_new = false;
+      } else {
         return res.status(400).json({
-          message: "Each product must have name, type, and price",
+          message: "is_new must be a boolean (or string true/false, 1/0)",
         });
       }
+    }
+    if (typeof p.is_new !== "boolean") {
+      return res.status(400).json({ message: "is_new must be a boolean" });
+    }
 
-      if (!ALLOWED_TYPES.includes(p.type)) {
-        return res.status(400).json({
-          message: `Product ${p.name}: invalid type '${p.type}'`,
-          allowedTypes: ALLOWED_TYPES,
-        });
-      }
-
-      if (
-        p.stock_quantity !== undefined &&
-        typeof p.stock_quantity !== "number"
-      ) {
-        return res.status(400).json({
-          message: `Product ${p.name}: 'stock_quantity' must be a number`,
-        });
-      }
-
-      if (p.is_new !== undefined && typeof p.is_new !== "boolean") {
-        return res.status(400).json({
-          message: `Product ${p.name}: 'is_new' must be a boolean`,
-        });
-      }
-
-      if (p.image_urls !== undefined) {
-        if (!Array.isArray(p.image_urls)) {
-          return res.status(400).json({
-            message: `Product ${p.name}: 'image_urls' must be an array of URL strings`,
-          });
-        }
-        for (let i = 0; i < p.image_urls.length; i++) {
-          const u = p.image_urls[i];
-          if (typeof u !== "string" || !u.trim()) {
-            return res.status(400).json({
-              message: `Product ${p.name}: image_urls[${i}] must be a non-empty string`,
-            });
-          }
-          if (!isValidHttpUrl(u.trim())) {
-            return res.status(400).json({
-              message: `Product ${p.name}: image_urls[${i}] must be a valid http(s) URL`,
-            });
-          }
-        }
+    if (typeof p.variants === "string" && p.variants.trim() !== "") {
+      try {
+        p.variants = JSON.parse(p.variants);
+      } catch {
+        return res.status(400).json({ message: "variants must be valid JSON" });
       }
     }
 
-    // 2️⃣ Check duplicates (name + type)
-    const nameTypePairs = products.map((p) => ({
+    delete p.image_urls;
+
+    const gcsUrls = [];
+    for (const file of uploadedFiles) {
+      gcsUrls.push(
+        await uploadImageBufferToGcs(
+          file.buffer,
+          file.originalname,
+          file.mimetype,
+          p.type,
+          p.name
+        )
+      );
+    }
+    p.image_urls = gcsUrls;
+
+    if (!p.name || !p.type || typeof p.price !== "number") {
+      return res.status(400).json({
+        message: "Product must have name, type, and price (number)",
+      });
+    }
+
+    if (!ALLOWED_TYPES.includes(p.type)) {
+      return res.status(400).json({
+        message: `Invalid type '${p.type}'`,
+        allowedTypes: ALLOWED_TYPES,
+      });
+    }
+
+    const existing = await Product.findOne({
       name: p.name,
       type: p.type,
-    }));
-
-    const existingProducts = await Product.find({
-      $or: nameTypePairs,
     }).select("name type");
 
-    if (existingProducts.length > 0) {
+    if (existing) {
       return res.status(409).json({
         message: "Duplicate product name in the same category",
-        duplicates: existingProducts,
+        duplicates: [existing],
       });
     }
 
-    const createdProducts = [];
+    const product = await Product.create({
+      name: p.name,
+      description: p.description,
+      price: p.price,
+      type: p.type,
+      is_new: p.is_new,
+      stock_quantity: p.stock_quantity,
+      sort_order: p.sort_order,
+    });
 
-    // 3️⃣ Create products one by one (variants need product_id)
-    for (const p of products) {
-      const product = await Product.create({
-        name: p.name,
-        description: p.description,
-        price: p.price,
-        type: p.type, // enum validates automatically
-        is_new: p.is_new || false,
-        stock_quantity: p.stock_quantity || 0,
-        sort_order: p.sort_order || 0,
-      });
-
-      // 4️⃣ Create variants if provided
-      if (Array.isArray(p.variants) && p.variants.length > 0) {
-        const variants = await ProductVariant.insertMany(
-          p.variants.map((v) => ({
-            product_id: product._id,
-            size: v.size,
-            color: v.color,
-            price: v.price,
-            stock_quantity: v.stock_quantity || 0,
-          }))
-        );
-
-        product.product_variants = variants.map((v) => v._id);
-        await product.save();
-      }
-
-      if (Array.isArray(p.image_urls) && p.image_urls.length > 0) {
-        const urls = p.image_urls.map((s) => s.trim());
-        const primaryI = primaryImageIndexFromUrls(urls);
-        const toInsert = urls.map((image_url, i) => ({
+    if (Array.isArray(p.variants) && p.variants.length > 0) {
+      const variants = await ProductVariant.insertMany(
+        p.variants.map((v) => ({
           product_id: product._id,
-          image_url,
-          is_primary: i === primaryI,
-        }));
-        const createdImgs = await ProductImage.insertMany(toInsert, {
-          ordered: true,
-        });
-        product.images = createdImgs.map((doc) => doc._id);
-        await product.save();
-      }
+          size: v.size,
+          color: v.color,
+          price: v.price,
+          stock_quantity: v.stock_quantity || 0,
+        }))
+      );
 
-      createdProducts.push(product);
+      product.product_variants = variants.map((v) => v._id);
+      await product.save();
+    }
+
+    if (Array.isArray(p.image_urls) && p.image_urls.length > 0) {
+      const urls = p.image_urls.map((s) => s.trim());
+      const primaryI = primaryImageIndexFromUrls(urls);
+      const toInsert = urls.map((image_url, i) => ({
+        product_id: product._id,
+        image_url,
+        is_primary: i === primaryI,
+      }));
+      const createdImgs = await ProductImage.insertMany(toInsert, {
+        ordered: true,
+      });
+      product.images = createdImgs.map((doc) => doc._id);
+      await product.save();
     }
 
     return res.status(201).json({
-      message: "Products created successfully",
-      count: createdProducts.length,
-      products: createdProducts,
+      message: "Product created successfully",
+      product,
     });
   } catch (error) {
-    console.error("Bulk insert error:", error);
+    console.error("Add product error:", error);
 
     // Handle unique index error nicely
     if (error.code === 11000) {
@@ -1213,10 +1467,15 @@ export const createPublicPromo = async (req, res) => {
   try {
     const { promo_code, discount, expiry_date } = req.body;
 
-    if (!promo_code || !discount) {
-      return res
-        .status(400)
-        .json({ message: "promo_code and discount are required." });
+    const expiryMissing =
+      expiry_date === undefined ||
+      expiry_date === null ||
+      (typeof expiry_date === "string" && !String(expiry_date).trim());
+
+    if (!promo_code || discount === undefined || discount === null || expiryMissing) {
+      return res.status(400).json({
+        message: "promo_code, discount, and expiry_date are required.",
+      });
     }
 
     const formattedCode = promo_code.trim().toUpperCase();
@@ -1226,6 +1485,18 @@ export const createPublicPromo = async (req, res) => {
       return res
         .status(400)
         .json({ message: "Promo code must be exactly 6 characters long." });
+    }
+
+    const expiry = new Date(expiry_date);
+    if (Number.isNaN(expiry.getTime())) {
+      return res.status(400).json({ message: "expiry_date must be a valid date." });
+    }
+
+    const minExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    if (expiry.getTime() < minExpiry.getTime()) {
+      return res.status(400).json({
+        message: "expiry_date must be at least 24 hours from now.",
+      });
     }
 
     const existing = await PromoCode.findOne({ promo_code: formattedCode });
@@ -1238,7 +1509,7 @@ export const createPublicPromo = async (req, res) => {
       discount: Number(discount),
       is_public: true,
       used_by: [],
-      expiry_date: expiry_date ? new Date(expiry_date) : new Date("2100-01-01"),
+      expiry_date: expiry,
     });
 
     return res.status(201).json({
@@ -1247,6 +1518,43 @@ export const createPublicPromo = async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating promo code:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const getAllPromoCodes = async (req, res) => {
+  try {
+    const promos = await PromoCode.find({})
+      .sort({ created_at: -1 })
+      .lean();
+    return res.status(200).json({
+      count: promos.length,
+      promo_codes: promos,
+    });
+  } catch (error) {
+    console.error("Error listing promo codes:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+export const deletePromoCodeById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Valid promo code id is required." });
+    }
+
+    const deleted = await PromoCode.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ message: "Promo code not found." });
+    }
+
+    return res.status(200).json({
+      message: "Promo code deleted successfully.",
+      deleted,
+    });
+  } catch (error) {
+    console.error("Error deleting promo code:", error);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
