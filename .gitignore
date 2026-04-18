@@ -7,14 +7,12 @@ package-lock.json
 
 # Environment files (DO NOT COMMIT SECRETS)
 .env
-.env.local
-.env.development
-.env.production
 
 # Google Cloud / service account credentials
 credentials-elysian-api.json
 *.service-account.json
 credentials.json
+src/config/gcs-key.json
 
 # Build output (if you ever build)
 dist/
