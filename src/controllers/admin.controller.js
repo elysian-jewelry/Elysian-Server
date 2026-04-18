@@ -82,6 +82,47 @@ function primaryImageIndexFromUrls(urls) {
   return idx >= 0 ? idx : 0;
 }
 
+function normalizeRemoveImageIds(value) {
+  if (value === undefined || value === null || value === "") return [];
+  if (Array.isArray(value)) {
+    return value.filter((id) => mongoose.Types.ObjectId.isValid(String(id)));
+  }
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const arr = JSON.parse(value);
+      return Array.isArray(arr)
+        ? arr.filter((id) => mongoose.Types.ObjectId.isValid(String(id)))
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function resyncProductImagePrimaryAndRefs(productId) {
+  const imgs = await ProductImage.find({ product_id: productId })
+    .sort({ created_at: 1 })
+    .lean();
+  if (!imgs.length) {
+    await Product.findByIdAndUpdate(productId, { $set: { images: [] } });
+    return;
+  }
+  const urls = imgs.map((i) => String(i.image_url || "").trim());
+  const primaryIdx = primaryImageIndexFromUrls(urls);
+  await Promise.all(
+    imgs.map((img, idx) =>
+      ProductImage.updateOne(
+        { _id: img._id },
+        { $set: { is_primary: idx === primaryIdx } }
+      )
+    )
+  );
+  await Product.findByIdAndUpdate(productId, {
+    $set: { images: imgs.map((i) => i._id) },
+  });
+}
+
 function parsePositiveInt(value, fieldLabel) {
   const n = Number(value);
   if (!Number.isInteger(n) || n < 1) {
@@ -1107,6 +1148,45 @@ export const getAllOrdersFull = async (req, res) => {
 
 
 export const updateProduct = async (req, res) => {
+  const isMultipart = (req.headers["content-type"] || "")
+    .toLowerCase()
+    .includes("multipart/form-data");
+
+  let body = req.body;
+  if (isMultipart) {
+    const raw = req.body.payload;
+    if (raw == null || String(raw).trim() === "") {
+      return res.status(400).json({
+        message:
+          'multipart/form-data requires a "payload" field: JSON string with at least name and type (and optional remove_image_ids, etc.).',
+      });
+    }
+    if (typeof raw !== "string") {
+      return res.status(400).json({ message: "payload must be a JSON string." });
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return res.status(400).json({ message: "payload must be a JSON object." });
+      }
+      body = parsed;
+    } catch {
+      return res.status(400).json({ message: "payload must be valid JSON." });
+    }
+  }
+
+  const removeIds = normalizeRemoveImageIds(body.remove_image_ids);
+
+  if (typeof body.add_variants === "string" && body.add_variants.trim() !== "") {
+    try {
+      body.add_variants = JSON.parse(body.add_variants);
+    } catch {
+      return res.status(400).json({
+        message: "add_variants must be a valid JSON array string when sent as text.",
+      });
+    }
+  }
+
   const {
     name,
     type,
@@ -1121,7 +1201,7 @@ export const updateProduct = async (req, res) => {
     new_size,
     new_color,
     add_variants,
-  } = req.body;
+  } = body;
 
   if (!name || !type) {
     return res.status(400).json({
@@ -1340,14 +1420,91 @@ export const updateProduct = async (req, res) => {
       ...addedVariants,
     ];
 
+    let images_deleted = 0;
+    let images_added = 0;
+    const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+
+    let productDoc = await Product.findById(product._id);
+    if (!productDoc) {
+      return res.status(404).json({ message: "Product not found." });
+    }
+
+    let toRemoveList = [];
+    let objectIds = [];
+    if (removeIds.length > 0) {
+      const uniqueRemove = [...new Set(removeIds.map((id) => String(id)))];
+      objectIds = uniqueRemove.map((id) => new mongoose.Types.ObjectId(id));
+      toRemoveList = await ProductImage.find({
+        _id: { $in: objectIds },
+        product_id: productDoc._id,
+      }).lean();
+      if (toRemoveList.length !== uniqueRemove.length) {
+        return res.status(400).json({
+          message:
+            "One or more remove_image_ids are invalid or do not belong to this product.",
+        });
+      }
+    }
+
+    const imageMutation =
+      removeIds.length > 0 || uploadedFiles.length > 0;
+    if (imageMutation) {
+      const currentCount = await ProductImage.countDocuments({
+        product_id: productDoc._id,
+      });
+      const finalCount =
+        currentCount - toRemoveList.length + uploadedFiles.length;
+      if (finalCount < 1) {
+        return res.status(400).json({
+          message:
+            "The product must keep at least one image. Upload new image(s) before removing the last one(s), or remove fewer images.",
+        });
+      }
+    }
+
+    if (toRemoveList.length > 0) {
+      const urls = toRemoveList.map((d) => d.image_url).filter(Boolean);
+      await deleteObjectsByPublicUrls(urls);
+      await ProductImage.deleteMany({ _id: { $in: objectIds } });
+      images_deleted = toRemoveList.length;
+    }
+
+    if (uploadedFiles.length > 0) {
+      const newDocs = [];
+      for (const file of uploadedFiles) {
+        const image_url = await uploadImageBufferToGcs(
+          file.buffer,
+          file.originalname,
+          file.mimetype,
+          productDoc.type,
+          productDoc.name
+        );
+        newDocs.push({
+          product_id: productDoc._id,
+          image_url,
+          is_primary: false,
+        });
+      }
+      await ProductImage.insertMany(newDocs, { ordered: true });
+      images_added = newDocs.length;
+    }
+
+    if (removeIds.length > 0 || uploadedFiles.length > 0) {
+      await resyncProductImagePrimaryAndRefs(productDoc._id);
+    }
+
+    const productOut = await Product.findById(productDoc._id);
+
     return res.status(200).json({
       message: "Product updated successfully.",
-      product,
+      product: productOut,
       variants,
       variants_modified: updatedVariant ? 1 : 0,
       variants_added: addedVariants.length,
       carts_affected,
       cart_items_deleted,
+      images_deleted,
+      images_added,
     });
   } catch (error) {
     console.error("Error updating product:", error);

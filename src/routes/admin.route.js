@@ -37,7 +37,25 @@ router.post(
 
 router.get("/admin/orders/statistics/monthly", getMonthlyOrderTotals);
 
-router.put("/admin/products", updateProduct);
+router.put(
+  "/admin/products",
+  (req, res, next) => {
+    const ct = (req.headers["content-type"] || "").toLowerCase();
+    if (ct.includes("multipart/form-data")) {
+      uploadProductImagesMulter(req, res, (err) => {
+        if (err) {
+          return res.status(400).json({
+            message: err.message || "Image upload parsing failed",
+          });
+        }
+        next();
+      });
+      return;
+    }
+    next();
+  },
+  updateProduct
+);
 
 router.delete("/admin/products/variants", deleteVariant);
 

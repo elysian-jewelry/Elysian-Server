@@ -32,7 +32,7 @@ export const getFeaturedProducts = async (req, res) => {
       .populate({
         path: "images",
         select: "image_url is_primary",
-        options: { limit: 4 },
+        options: { limit: 5 },
       });
 
     // 3️⃣ Preserve order and limit to top 4
@@ -113,7 +113,7 @@ export const getNewArrivalProducts = async (req, res) => {
     let populatedProducts = await Product.populate(products, {
       path: "images",
       select: "image_url is_primary",
-      options: { limit: 4 },
+      options: { limit: 5 },
     });
 
     populatedProducts = await Product.populate(populatedProducts, {
@@ -142,7 +142,7 @@ export const getProductsByType = async (req, res) => {
       });
     }
 
-    const populateImages = { path: "images", select: "image_url is_primary", options: { limit: 4 } };
+    const populateImages = { path: "images", select: "image_url is_primary", options: { limit: 5 } };
     const populateVariants = { path: "product_variants", select: "variant_id size color price stock_quantity" };
 
     const ordered = await Product.find({ type, sort_order: { $gt: 0 } })
@@ -239,7 +239,7 @@ const formatProductResponse = (productsRaw) => {
 
 export const getAllProducts = async (req, res) => {
   try {
-    const populateImages = { path: "images", select: "image_url is_primary", options: { limit: 4 } };
+    const populateImages = { path: "images", select: "image_url is_primary", options: { limit: 5 } };
     const populateVariants = { path: "product_variants", select: "size price color stock_quantity" };
 
     const ordered = await Product.find({ sort_order: { $gt: 0 } })
