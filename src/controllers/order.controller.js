@@ -181,6 +181,7 @@ export const checkout = async (req, res) => {
       user_id,
       subtotal,
       discount_percent: discount,
+      promo_code: promo ? promo.promo_code : null,
       total_amount,
       shipping_cost,
       address,
@@ -312,7 +313,7 @@ export const getUserOrders = async (req, res) => {
 
   try {
     const orders = await Order.find({ user_id })
-      .sort({ order_date: 1 }) // sort ascending (oldest first)
+      .sort({ order_date: -1, _id: -1 }) // newest first (tie-break same timestamp)
       .lean();
 
     if (!orders.length) {
@@ -345,20 +346,35 @@ export const getUserOrders = async (req, res) => {
         quantity: item.quantity,
         price: parseFloat(item.price),
         size: item.size,
+        color: item.color,
         image_url: item.product_id?.images?.[0]?.image_url || null,
       });
     }
 
-    const formattedOrders = orders.map((order, index) => ({
-      order_id: index + 1,
-      order_date: order.order_date,
-      status: order.status,
-      shipping_cost: order.shipping_cost,
-      subtotal: order.subtotal,
-      discount_percent: order.discount_percent,
-      total_amount: order.total_amount,
-      items: itemsByOrder[order._id.toString()] || [],
-    }));
+    const formattedOrders = orders.map((order) => {
+      const discountPercent = order.discount_percent ?? 0;
+
+      return {
+        order_id: order._id,
+        order_date: order.order_date,
+        status: order.status,
+        shipping_address: {
+          address: order.address,
+          apartment_no: order.apartment_no,
+          city: order.city,
+          governorate: order.governorate,
+          full: `${order.address}, ${order.apartment_no}, ${order.city}, ${order.governorate}`,
+        },
+        contact_number: order.phone_number,
+        subtotal: order.subtotal,
+        shipping_cost: order.shipping_cost ?? 0,
+        discount_percent: discountPercent,
+        promo_used: discountPercent > 0,
+        promo_code: order.promo_code || null,
+        total_amount: order.total_amount,
+        items: itemsByOrder[order._id.toString()] || [],
+      };
+    });
 
     res.status(200).json(formattedOrders);
   } catch (error) {

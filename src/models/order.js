@@ -21,6 +21,10 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    promo_code: {
+      type: String,
+      default: null,
+    },
     total_amount: {
       type: Number,
       required: true,
