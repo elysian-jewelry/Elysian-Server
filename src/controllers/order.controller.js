@@ -250,7 +250,8 @@ export const checkout = async (req, res) => {
         size: item.variant_id?.size || item.size || null,
         color: item.variant_id?.color || item.color || null,
         price: item.variant_id?.price || item.product_id.price,
-      }))
+      })),
+      phone_number
     );
 
     if (promo_code && promo && discount > 0) {

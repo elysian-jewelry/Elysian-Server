@@ -60,7 +60,8 @@ export const sendOrderConfirmationEmail = async (
   subtotal,
   shipping_cost,
   order,
-  items
+  items,
+  phone_number
 ) => {
   // Build product rows
   const productListHtml = items
@@ -81,9 +82,24 @@ export const sendOrderConfirmationEmail = async (
 // Build summary section (with optional discount)
 const hasDiscount = discount && discount > 0;
 
+// Contact details in a simple clean text layout
+const contactDetailsHtml = `
+  <div style="margin: 20px 0 8px; font-size: 14px; color: #111; line-height: 1.7; text-align: left;">
+    <p style="margin: 0 0 6px;">
+      <strong>Shipping Address:</strong> ${address || "-"}
+    </p>
+    <p style="margin: 0;">
+      <strong>Contact Number:</strong>
+      <a href="tel:${phone_number || ""}" style="color: #111; text-decoration: none;">
+        ${phone_number || "-"}
+      </a>
+    </p>
+  </div>
+`;
+
 const summaryHtml = `
   <div style="margin-top: 20px; font-size: 15px; line-height: 1.8; color: #111; text-align: center;">
-    <p><strong>Shipping Address:</strong> ${address}</p>
+    ${contactDetailsHtml}
 
     <table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px auto; max-width: 420px; border-collapse: collapse;">
       <tr>
@@ -122,7 +138,7 @@ const summaryHtml = `
     </table>
 
     <p style="margin-top: 12px;">
-      <strong>Estimated Delivery:</strong> 4–7 working days 🚚
+      <strong>Estimated Delivery:</strong> 5-7 working days 🚚
     </p>
   </div>
 `;
