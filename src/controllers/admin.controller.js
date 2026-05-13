@@ -823,19 +823,6 @@ export const deleteProductsByNameAndType = async (req, res) => {
   }
 };
 
-const ALLOWED_TYPES = [
-  "Earrings",
-  "Necklaces",
-  "Bracelets",
-  "Hand Chains",
-  "Back Chains",
-  "Body Chains",
-  "Waist Chains",
-  "Sets",
-  "Bags",
-  "Rings",
-];
-
 export const addProductsWithVariants = async (req, res) => {
   try {
     if (!req.body || typeof req.body !== "object") {
@@ -962,13 +949,6 @@ export const addProductsWithVariants = async (req, res) => {
     if (!p.name || !p.type || typeof p.price !== "number") {
       return res.status(400).json({
         message: "Product must have name, type, and price (number)",
-      });
-    }
-
-    if (!ALLOWED_TYPES.includes(p.type)) {
-      return res.status(400).json({
-        message: `Invalid type '${p.type}'`,
-        allowedTypes: ALLOWED_TYPES,
       });
     }
 

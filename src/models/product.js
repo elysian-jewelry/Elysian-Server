@@ -18,18 +18,6 @@ const productSchema = new mongoose.Schema(
     type: {
       type: String,
       required: true,
-      enum: [
-        "Earrings",
-        "Necklaces",
-        "Bracelets",
-        "Hand Chains",
-        "Back Chains",
-        "Body Chains",
-        "Waist Chains",
-        "Sets",
-        "Rings",
-        "Bags"
-      ],
     },
     stock_quantity: {
       type: Number,

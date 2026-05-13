@@ -1,6 +1,16 @@
 import Product from "../models/product.js";
 import OrderItem from "../models/orderItem.js";
 
+export const getCategories = async (req, res) => {
+  try {
+    const categories = await Product.distinct("type");
+    res.status(200).json(categories.sort());
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error fetching categories", error });
+  }
+};
+
 export const getFeaturedProducts = async (req, res) => {
   try {
     // 1️⃣ Aggregate most ordered products
