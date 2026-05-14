@@ -17,6 +17,7 @@ import {
   deleteObjectsByPublicUrls,
   deleteAllObjectsInBucket,
   deleteAllGcsObjectsUnderProductPrefix,
+  renameGcsProductFolder,
 } from "../services/gcsImageUpload.service.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1251,6 +1252,24 @@ export const updateProduct = async (req, res) => {
     if (is_new !== undefined) product.is_new = is_new;
 
     await product.save();
+
+    // 1.5 Rename GCS folder & update image URLs in DB
+    if (new_name !== undefined) {
+      const urlMap = await renameGcsProductFolder(type, name, new_name.trim());
+      if (urlMap.size > 0) {
+        const images = await ProductImage.find({ product_id: product._id });
+        await Promise.all(
+          images.map((img) => {
+            const newUrl = urlMap.get(img.image_url);
+            if (newUrl) {
+              img.image_url = newUrl;
+              return img.save();
+            }
+            return Promise.resolve();
+          })
+        );
+      }
+    }
 
     // 2️⃣ Update ONE existing variant (find by size OR color)
     let updatedVariant = null;

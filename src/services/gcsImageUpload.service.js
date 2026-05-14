@@ -125,6 +125,44 @@ export async function deleteAllGcsObjectsUnderProductPrefix(type, name) {
   await bucket.file(folderMarker).delete({ ignoreNotFound: true });
 }
 
+/**
+ * Rename a product's GCS "folder" by copying every object from the old prefix
+ * to a new prefix and deleting the originals. Returns a map of old URL → new URL
+ * so callers can update database records.
+ * @param {string} type      product type / category
+ * @param {string} oldName   current product name
+ * @param {string} newName   desired product name
+ * @returns {Promise<Map<string, string>>} oldUrl → newUrl
+ */
+export async function renameGcsProductFolder(type, oldName, newName) {
+  const oldPrefix = gcsProductImagePrefix(type, oldName);
+  const newPrefix = gcsProductImagePrefix(type, newName);
+  if (!oldPrefix || !newPrefix || oldPrefix === newPrefix) return new Map();
+
+  const bucket = getStorage().bucket(BUCKET_NAME);
+  const [files] = await bucket.getFiles({ prefix: oldPrefix, autoPaginate: true });
+  if (files.length === 0) return new Map();
+
+  const urlMap = new Map();
+
+  await Promise.all(
+    files.map(async (file) => {
+      const newObjectName = file.name.replace(oldPrefix, newPrefix);
+      await file.copy(bucket.file(newObjectName));
+      await file.delete({ ignoreNotFound: true });
+      urlMap.set(
+        publicUrlForObject(file.name),
+        publicUrlForObject(newObjectName)
+      );
+    })
+  );
+
+  const folderMarker = oldPrefix.replace(/\/$/, "");
+  await bucket.file(folderMarker).delete({ ignoreNotFound: true });
+
+  return urlMap;
+}
+
 /** Delete every object in the configured bucket (used before full re-sync). */
 export async function deleteAllObjectsInBucket() {
   const bucket = getStorage().bucket(BUCKET_NAME);
