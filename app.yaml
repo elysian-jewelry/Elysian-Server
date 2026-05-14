@@ -14,13 +14,6 @@ env_variables:
   PORT: "8080"
   NODE_ENV: "production"
 
-  # ─────── MYSQL CONFIG ───────
-  MYSQL_HOST: "mysql-281cda23-elysian-d80e.h.aivencloud.com"
-  MYSQL_PORT: "26376"
-  MYSQL_USER: "avnadmin"
-  MYSQL_PASSWORD: "AVNS_QtPLNh4iXI5oKT2DqtF"
-  MYSQL_DB: "elysian"
-
   # ─────── JWT AUTH ───────
   JWT_SECRET: "s3cR3t!@#9v$E2z^T&dLr0*YqW+KbH1PfA%mNgXjUoC6bZiVxSwMtQnJg"
 
