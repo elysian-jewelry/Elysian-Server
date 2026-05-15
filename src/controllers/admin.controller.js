@@ -805,32 +805,23 @@ export const deleteProductsByNameAndType = async (req, res) => {
       product_id: { $in: matchedIds },
     });
 
-    // 3️⃣ Collect sort_order + type before deleting
-    const deletedSortInfo = matchedProducts.map((p) => ({
-      type: p.type,
-      sort_order: p.sort_order,
-    }));
+    // 3️⃣ Collect affected categories before deleting
+    const affectedTypes = [...new Set(matchedProducts.map((p) => p.type))];
 
     // 4️⃣ Delete products
     const deleteResult = await Product.deleteMany({
       _id: { $in: matchedIds },
     });
 
-    // 5️⃣ Fill sort_order gaps per category
-    const grouped = {};
-    for (const { type, sort_order } of deletedSortInfo) {
-      if (sort_order == null) continue;
-      if (!grouped[type]) grouped[type] = [];
-      grouped[type].push(sort_order);
-    }
-
-    for (const [type, sortOrders] of Object.entries(grouped)) {
-      const sorted = [...sortOrders].sort((a, b) => a - b);
-      for (let i = 0; i < sorted.length; i++) {
-        const threshold = sorted[i] - i;
-        await Product.updateMany(
-          { type, sort_order: { $gt: threshold } },
-          { $inc: { sort_order: -1 } }
+    // 5️⃣ Re-sequence sort_order per affected category
+    for (const type of affectedTypes) {
+      const remaining = await Product.find({ type })
+        .sort({ sort_order: 1 })
+        .select("_id");
+      for (let i = 0; i < remaining.length; i++) {
+        await Product.updateOne(
+          { _id: remaining[i]._id },
+          { $set: { sort_order: i + 1 } }
         );
       }
     }
