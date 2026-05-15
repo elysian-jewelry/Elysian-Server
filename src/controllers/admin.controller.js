@@ -763,7 +763,7 @@ export const deleteProductsByNameAndType = async (req, res) => {
     // Find matching products
     const matchedProducts = await Product.find({
       $or: matchQuery,
-    }).select("_id name type");
+    }).select("_id name type sort_order");
 
     if (matchedProducts.length === 0) {
       return res.status(404).json({
@@ -805,10 +805,35 @@ export const deleteProductsByNameAndType = async (req, res) => {
       product_id: { $in: matchedIds },
     });
 
-    // 3️⃣ Delete products
+    // 3️⃣ Collect sort_order + type before deleting
+    const deletedSortInfo = matchedProducts.map((p) => ({
+      type: p.type,
+      sort_order: p.sort_order,
+    }));
+
+    // 4️⃣ Delete products
     const deleteResult = await Product.deleteMany({
       _id: { $in: matchedIds },
     });
+
+    // 5️⃣ Fill sort_order gaps per category
+    const grouped = {};
+    for (const { type, sort_order } of deletedSortInfo) {
+      if (sort_order == null) continue;
+      if (!grouped[type]) grouped[type] = [];
+      grouped[type].push(sort_order);
+    }
+
+    for (const [type, sortOrders] of Object.entries(grouped)) {
+      const sorted = [...sortOrders].sort((a, b) => a - b);
+      for (let i = 0; i < sorted.length; i++) {
+        const threshold = sorted[i] - i;
+        await Product.updateMany(
+          { type, sort_order: { $gt: threshold } },
+          { $inc: { sort_order: -1 } }
+        );
+      }
+    }
 
     return res.status(200).json({
       message: "Products deleted successfully",
