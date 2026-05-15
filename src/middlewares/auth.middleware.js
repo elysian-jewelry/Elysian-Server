@@ -11,13 +11,11 @@ const publicPaths = [
   "/products",
   "/products/type",
   "/users",
-  "/upload-images",
   "/sync-images",
   "/products/new-arrivals",
   "/products/featured",
-  "/upload-product-images",
   "/images",
-  
+  "/track-visit",
 ];
 
 export const authenticateJWT = (req, res, next) => {

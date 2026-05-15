@@ -1732,6 +1732,396 @@ export const deletePromoCodeById = async (req, res) => {
 };
 
 // --- NEW: Monthly order totals with grand total ---
+// ─────────────────────────────────────────────────────────
+// DASHBOARD APIs
+// ─────────────────────────────────────────────────────────
+
+/**
+ * GET /admin/dashboard/overview
+ * Single-call summary: total revenue, orders, users, new users this month,
+ * average order value, orders by status, revenue compared to last month.
+ */
+export const getDashboardOverview = async (req, res) => {
+  try {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const [
+      revenueResult,
+      thisMonthRevenue,
+      lastMonthRevenue,
+      totalOrders,
+      thisMonthOrders,
+      totalUsers,
+      newUsersThisMonth,
+      newUsersLastMonth,
+    ] = await Promise.all([
+      // Total revenue (exclude cancelled)
+      Order.aggregate([
+        { $match: { status: { $ne: "Cancelled" } } },
+        {
+          $group: {
+            _id: null,
+            total_revenue: { $sum: { $toDouble: "$total_amount" } },
+            total_subtotal: { $sum: { $toDouble: "$subtotal" } },
+            total_shipping: { $sum: { $toDouble: "$shipping_cost" } },
+          },
+        },
+      ]),
+      // This month revenue
+      Order.aggregate([
+        {
+          $match: {
+            status: { $ne: "Cancelled" },
+            order_date: { $gte: startOfMonth },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            revenue: { $sum: { $toDouble: "$total_amount" } },
+            orders: { $sum: 1 },
+          },
+        },
+      ]),
+      // Last month revenue
+      Order.aggregate([
+        {
+          $match: {
+            status: { $ne: "Cancelled" },
+            order_date: { $gte: startOfLastMonth, $lt: startOfMonth },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            revenue: { $sum: { $toDouble: "$total_amount" } },
+            orders: { $sum: 1 },
+          },
+        },
+      ]),
+      // Total orders count
+      Order.countDocuments({ status: { $ne: "Cancelled" } }),
+      // This month orders count
+      Order.countDocuments({
+        status: { $ne: "Cancelled" },
+        order_date: { $gte: startOfMonth },
+      }),
+      // Total users
+      User.countDocuments(),
+      // New users this month
+      User.countDocuments({ created_at: { $gte: startOfMonth } }),
+      // New users last month
+      User.countDocuments({
+        created_at: { $gte: startOfLastMonth, $lt: startOfMonth },
+      }),
+    ]);
+
+    const rev = revenueResult[0] || {
+      total_revenue: 0,
+      total_subtotal: 0,
+      total_shipping: 0,
+    };
+    const thisMonth = thisMonthRevenue[0] || { revenue: 0, orders: 0 };
+    const lastMonth = lastMonthRevenue[0] || { revenue: 0, orders: 0 };
+
+    const revenueGrowth =
+      lastMonth.revenue > 0
+        ? (((thisMonth.revenue - lastMonth.revenue) / lastMonth.revenue) * 100).toFixed(1)
+        : null;
+    const ordersGrowth =
+      lastMonth.orders > 0
+        ? (((thisMonth.orders - lastMonth.orders) / lastMonth.orders) * 100).toFixed(1)
+        : null;
+    const usersGrowth =
+      newUsersLastMonth > 0
+        ? (((newUsersThisMonth - newUsersLastMonth) / newUsersLastMonth) * 100).toFixed(1)
+        : null;
+
+    return res.status(200).json({
+      total_revenue: rev.total_revenue,
+      total_subtotal: rev.total_subtotal,
+      total_shipping: rev.total_shipping,
+      total_orders: totalOrders,
+      average_order_value:
+        totalOrders > 0
+          ? Math.round((rev.total_revenue / totalOrders) * 100) / 100
+          : 0,
+      this_month: {
+        revenue: thisMonth.revenue,
+        orders: thisMonth.orders,
+        new_users: newUsersThisMonth,
+      },
+      last_month: {
+        revenue: lastMonth.revenue,
+        orders: lastMonth.orders,
+        new_users: newUsersLastMonth,
+      },
+      growth: {
+        revenue_percent: revenueGrowth,
+        orders_percent: ordersGrowth,
+        users_percent: usersGrowth,
+      },
+      total_users: totalUsers,
+      new_users_this_month: newUsersThisMonth,
+    });
+  } catch (error) {
+    console.error("Dashboard overview error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/**
+ * GET /admin/dashboard/top-products
+ * Top selling products ranked by total quantity sold.
+ * Query params: ?limit=10&year=2026&status=exclude-cancelled
+ */
+export const getTopSellingProducts = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit ?? 20, 10);
+    const year = req.query.year ? parseInt(req.query.year, 10) : null;
+    const statusParam = (req.query.status || "exclude-cancelled").trim().toLowerCase();
+
+    const orderMatch = {};
+    if (year) {
+      orderMatch.order_date = {
+        $gte: new Date(Date.UTC(year, 0, 1)),
+        $lt: new Date(Date.UTC(year + 1, 0, 1)),
+      };
+    }
+    if (statusParam === "exclude-cancelled") {
+      orderMatch.status = { $ne: "Cancelled" };
+    } else if (statusParam !== "all") {
+      const statuses = statusParam.split(",").map((s) => s.trim()).filter(Boolean);
+      if (statuses.length) orderMatch.status = { $in: statuses };
+    }
+
+    const pipeline = [
+      { $match: orderMatch },
+      {
+        $lookup: {
+          from: "order_items",
+          localField: "_id",
+          foreignField: "order_id",
+          as: "items",
+        },
+      },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.product_id",
+          total_quantity_sold: { $sum: "$items.quantity" },
+          total_revenue: {
+            $sum: {
+              $multiply: [
+                { $toDouble: "$items.price" },
+                "$items.quantity",
+              ],
+            },
+          },
+          total_orders: { $sum: 1 },
+        },
+      },
+      { $sort: { total_quantity_sold: -1 } },
+      { $limit: limit },
+      {
+        $lookup: {
+          from: "products",
+          localField: "_id",
+          foreignField: "_id",
+          as: "product",
+        },
+      },
+      { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "product_images",
+          let: { pid: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$product_id", "$$pid"] }, is_primary: true } },
+            { $limit: 1 },
+          ],
+          as: "primary_image",
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          product_id: "$_id",
+          name: { $ifNull: ["$product.name", "Deleted Product"] },
+          type: { $ifNull: ["$product.type", "Unknown"] },
+          image_url: { $arrayElemAt: ["$primary_image.image_url", 0] },
+          total_quantity_sold: 1,
+          total_revenue: { $round: ["$total_revenue", 2] },
+          total_orders: 1,
+        },
+      },
+    ];
+
+    const products = await Order.aggregate(pipeline);
+
+    return res.status(200).json({
+      count: products.length,
+      limit,
+      year: year || "all-time",
+      products,
+    });
+  } catch (error) {
+    console.error("Top selling products error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/**
+ * GET /admin/dashboard/monthly-users
+ * New user registrations per month for a given year.
+ * Query params: ?year=2026
+ */
+export const getMonthlyUsers = async (req, res) => {
+  try {
+    const now = new Date();
+    const year = parseInt(req.query.year ?? now.getFullYear(), 10);
+    const tz = req.query.tz || "Africa/Cairo";
+
+    const start = new Date(Date.UTC(year, 0, 1));
+    const end = new Date(Date.UTC(year + 1, 0, 1));
+
+    const pipeline = [
+      { $match: { created_at: { $gte: start, $lt: end } } },
+      {
+        $addFields: {
+          monthBucket: {
+            $dateTrunc: { date: "$created_at", unit: "month", timezone: tz },
+          },
+        },
+      },
+      {
+        $facet: {
+          monthly: [
+            {
+              $group: {
+                _id: "$monthBucket",
+                new_users: { $sum: 1 },
+              },
+            },
+            { $sort: { _id: 1 } },
+            {
+              $addFields: {
+                month: {
+                  $dateToString: { date: "$_id", format: "%Y-%m", timezone: tz },
+                },
+              },
+            },
+            { $project: { _id: 0 } },
+          ],
+          total: [
+            { $group: { _id: null, total_new_users: { $sum: 1 } } },
+            { $project: { _id: 0 } },
+          ],
+        },
+      },
+    ];
+
+    const [result] = await User.aggregate(pipeline);
+    const monthly = result.monthly || [];
+    const total = (result.total && result.total[0]) || { total_new_users: 0 };
+
+    return res.status(200).json({
+      year,
+      timezone: tz,
+      total_new_users: total.total_new_users,
+      monthly,
+    });
+  } catch (error) {
+    console.error("Monthly users error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/**
+ * GET /admin/dashboard/sales-by-category
+ * Total sales broken down by product category (type).
+ * Query params: ?year=2026&status=exclude-cancelled
+ */
+export const getSalesByCategory = async (req, res) => {
+  try {
+    const year = req.query.year ? parseInt(req.query.year, 10) : null;
+    const statusParam = (req.query.status || "exclude-cancelled").trim().toLowerCase();
+
+    const orderMatch = {};
+    if (year) {
+      orderMatch.order_date = {
+        $gte: new Date(Date.UTC(year, 0, 1)),
+        $lt: new Date(Date.UTC(year + 1, 0, 1)),
+      };
+    }
+    if (statusParam === "exclude-cancelled") {
+      orderMatch.status = { $ne: "Cancelled" };
+    } else if (statusParam !== "all") {
+      const statuses = statusParam.split(",").map((s) => s.trim()).filter(Boolean);
+      if (statuses.length) orderMatch.status = { $in: statuses };
+    }
+
+    const pipeline = [
+      { $match: orderMatch },
+      {
+        $lookup: {
+          from: "order_items",
+          localField: "_id",
+          foreignField: "order_id",
+          as: "items",
+        },
+      },
+      { $unwind: "$items" },
+      {
+        $lookup: {
+          from: "products",
+          localField: "items.product_id",
+          foreignField: "_id",
+          as: "product",
+        },
+      },
+      { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: { $ifNull: ["$product.type", "Unknown"] },
+          total_quantity_sold: { $sum: "$items.quantity" },
+          total_revenue: {
+            $sum: {
+              $multiply: [
+                { $toDouble: "$items.price" },
+                "$items.quantity",
+              ],
+            },
+          },
+          total_orders: { $sum: 1 },
+        },
+      },
+      { $sort: { total_revenue: -1 } },
+      {
+        $project: {
+          _id: 0,
+          category: "$_id",
+          total_quantity_sold: 1,
+          total_revenue: { $round: ["$total_revenue", 2] },
+          total_orders: 1,
+        },
+      },
+    ];
+
+    const categories = await Order.aggregate(pipeline);
+
+    return res.status(200).json({
+      year: year || "all-time",
+      categories,
+    });
+  } catch (error) {
+    console.error("Sales by category error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
 export const getMonthlyOrderTotals = async (req, res) => {
   try {
     // Query params (all optional)

@@ -17,11 +17,22 @@ import {
   createGovOrderRate,
   updateGovOrderRate,
   deleteGovOrderRate,
+  getDashboardOverview,
+  getTopSellingProducts,
+  getMonthlyUsers,
+  getSalesByCategory,
 } from "../controllers/admin.controller.js";
 import { uploadProductImagesMulter } from "../middlewares/multerProductImages.middleware.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js";
+import { trackVisit, getVisitStats } from "../controllers/visit.controller.js";
 
 const router = express.Router();
+
+// ─── Public visit tracking ───
+router.get("/track-visit", trackVisit);
+
+// ─── Admin visit stats ───
+router.get("/admin/dashboard/visits", getVisitStats);
 
 router.delete("/admin/users/orders", deleteUserOrdersByEmail);
 
@@ -35,7 +46,12 @@ router.post(
   syncLocalImagesToGcsAndMongo
 );
 
-router.get("/admin/orders/statistics/monthly", getMonthlyOrderTotals);
+// ─── Dashboard ───
+router.get("/admin/dashboard/overview", getDashboardOverview);
+router.get("/admin/dashboard/top-products", getTopSellingProducts);
+router.get("/admin/dashboard/monthly-users", getMonthlyUsers);
+router.get("/admin/dashboard/sales-by-category", getSalesByCategory);
+router.get("/admin/dashboard/monthly-revenue", getMonthlyOrderTotals);
 
 router.put(
   "/admin/products",
