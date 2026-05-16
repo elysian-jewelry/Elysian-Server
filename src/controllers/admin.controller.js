@@ -1165,14 +1165,7 @@ export const addProductsWithVariants = async (req, res) => {
       }
     }
 
-    if (typeof p.option_types === "string" && p.option_types.trim() !== "") {
-      try {
-        p.option_types = JSON.parse(p.option_types);
-      } catch {
-        return res.status(400).json({ message: "option_types must be valid JSON" });
-      }
-    }
-    const optionTypes = normalizeOptionTypes(p.option_types);
+    const optionType = normalizeOptionType(p.option_type);
 
     // Pre-validate every supplied variant before any DB write.
     if (Array.isArray(p.variants) && p.variants.length > 0) {
@@ -1182,7 +1175,7 @@ export const addProductsWithVariants = async (req, res) => {
           return res.status(400).json({ message: "Each variant must have a numeric price." });
         }
         const attrs = sanitizeAttributes(v.attributes) || {};
-        const err = validateVariantAttributes(attrs, optionTypes);
+        const err = validateVariantAttributes(attrs, optionType);
         if (err) return res.status(400).json({ message: err });
         const key = buildAttributesKey(attrs);
         if (seenKeys.has(key)) {
@@ -1248,7 +1241,7 @@ export const addProductsWithVariants = async (req, res) => {
       is_new: p.is_new,
       stock_quantity: p.stock_quantity,
       sort_order: p.sort_order,
-      option_types: optionTypes,
+      option_type: optionType,
     });
 
     if (Array.isArray(p.variants) && p.variants.length > 0) {
@@ -1453,7 +1446,7 @@ export const updateProduct = async (req, res) => {
     price,
     is_new,
     new_name,
-    option_types,
+    option_type: option_type_raw,
     // Variant edit by id (preferred — unambiguous):
     variant_id,
     // Variant edit by lookup (alternative):
@@ -1531,25 +1524,9 @@ export const updateProduct = async (req, res) => {
       product.stock_quantity = product_quantity;
     if (price !== undefined) product.price = price;
     if (is_new !== undefined) product.is_new = is_new;
-    if (option_types !== undefined) {
-      const normalized = normalizeOptionTypes(option_types);
-      // Refuse to drop an option_type while existing variants still use it.
-      const inUse = await ProductVariant.find({ product_id: product._id }).lean();
-      const stillUsed = new Set();
-      for (const v of inUse) {
-        if (v.attributes) {
-          // Mongoose returns Map as plain object in .lean()
-          for (const k of Object.keys(v.attributes)) stillUsed.add(k);
-        }
-      }
-      for (const k of stillUsed) {
-        if (!normalized.includes(k)) {
-          return res.status(400).json({
-            message: `Cannot remove option_type '${k}': existing variants still use it.`,
-          });
-        }
-      }
-      product.option_types = normalized;
+    const incomingOptionType = normalizeOptionType(option_type_raw);
+    if (incomingOptionType !== undefined && incomingOptionType !== null) {
+      product.option_type = incomingOptionType;
     }
 
     await product.save();
@@ -1632,7 +1609,7 @@ export const updateProduct = async (req, res) => {
         if (!cleanAttrs) {
           return res.status(400).json({ message: "new_attributes must be an object." });
         }
-        const attrErr = validateVariantAttributes(cleanAttrs, product.option_types);
+        const attrErr = validateVariantAttributes(cleanAttrs, product.option_type);
         if (attrErr) return res.status(400).json({ message: attrErr });
         variantDoc.attributes = new Map(Object.entries(cleanAttrs));
       }
@@ -1703,7 +1680,7 @@ export const updateProduct = async (req, res) => {
           });
         }
         const attrs = sanitizeAttributes(v.attributes) || {};
-        const err = validateVariantAttributes(attrs, product.option_types);
+        const err = validateVariantAttributes(attrs, product.option_type);
         if (err) return res.status(400).json({ message: err });
         cleaned.push({
           attributes: attrs,
@@ -2564,18 +2541,10 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // VARIANT ATTRIBUTE HELPERS
 // ─────────────────────────────────────────────────────────
 
-/** Normalize an option-type list ("Size", "color ", "Charm") to ["size","color","charm"]. */
-const normalizeOptionTypes = (raw) => {
-  if (!Array.isArray(raw)) return [];
-  const seen = new Set();
-  const out = [];
-  for (const item of raw) {
-    const k = String(item || "").trim().toLowerCase();
-    if (!k || seen.has(k)) continue;
-    seen.add(k);
-    out.push(k);
-  }
-  return out;
+const normalizeOptionType = (raw) => {
+  if (!raw) return null;
+  const v = String(raw).trim().toLowerCase();
+  return v || null;
 };
 
 /**
@@ -2596,24 +2565,27 @@ const sanitizeAttributes = (raw) => {
 };
 
 /**
- * Verify every attribute key on a variant belongs to the product's
- * `option_types`. Returns an error string or null when OK.
+ * Verify variant attributes match the product's single `option_type`.
+ * Each variant must have exactly one attribute whose key matches option_type.
+ * Returns an error string or null when OK.
  */
-const validateVariantAttributes = (attributes, optionTypes) => {
-  const allowed = new Set(optionTypes || []);
-  if (allowed.size === 0) {
+const validateVariantAttributes = (attributes, optionType) => {
+  if (!optionType) {
     if (Object.keys(attributes).length > 0) {
-      return "Product has no option_types declared; variants cannot have attributes.";
+      return "Product has no option_type declared; variants cannot have attributes.";
     }
     return null;
   }
   if (Object.keys(attributes).length === 0) {
-    return "Variant attributes are required when the product declares option_types.";
+    return "Variant attributes are required when the product declares an option_type.";
   }
   for (const key of Object.keys(attributes)) {
-    if (!allowed.has(key)) {
-      return `Attribute '${key}' is not part of this product's option_types.`;
+    if (key !== optionType) {
+      return `Attribute '${key}' does not match this product's option_type '${optionType}'.`;
     }
+  }
+  if (!attributes[optionType]) {
+    return `Variant must have a value for '${optionType}'.`;
   }
   return null;
 };
@@ -2812,189 +2784,3 @@ export const updateCategory = async (req, res) => {
   }
 };
 
-/**
- * DELETE /admin/categories/:id — refuses to delete a category that still
- * has products attached to it (admin must move/delete those first).
- */
-
-// ─────────────────────────────────────────────────────────
-// ONE-TIME MIGRATION: legacy size/color → attributes Map
-// ─────────────────────────────────────────────────────────
-
-/**
- * POST /admin/maintenance/migrate-variant-attributes
- *
- * Backfills the new attribute-based variant schema from the legacy
- * size/color columns:
- *   1. For each ProductVariant: read raw size/color from the DB
- *      (mongoose strips them after the schema change, so we use the
- *      collection driver directly), build `attributes`, compute
- *      `attributes_key`, save.
- *   2. For each Product: derive `option_types` from the union of
- *      its variants' attribute keys.
- *   3. For each CartItem with variant_id: copy variant attributes
- *      onto cart_item.attributes (snapshot).
- *   4. For each OrderItem with variant_id (or legacy size/color):
- *      build attributes from the OrderItem's own legacy columns.
- *   5. After step 1 succeeds, $unset the legacy size/color columns
- *      from product_variants so they don't shadow future writes.
- *
- * Idempotent — running twice is a no-op.
- */
-export const migrateVariantAttributes = async (req, res) => {
-  const summary = {
-    variants_examined: 0,
-    variants_updated: 0,
-    products_updated_option_types: 0,
-    cart_items_updated: 0,
-    order_items_updated: 0,
-    legacy_fields_unset: 0,
-    errors: [],
-  };
-
-  try {
-    // ── 1. Variants ──
-    const variantsColl = ProductVariant.collection;
-    const rawVariants = await variantsColl
-      .find({}, { projection: { product_id: 1, size: 1, color: 1, attributes: 1, attributes_key: 1, description: 1 } })
-      .toArray();
-
-    for (const v of rawVariants) {
-      summary.variants_examined += 1;
-
-      const hasAttrs = v.attributes && Object.keys(v.attributes).length > 0;
-      const built = {};
-      if (v.size) built.size = String(v.size).trim();
-      if (v.color) built.color = String(v.color).trim();
-
-      // Skip when there's nothing legacy to convert and attributes are already set.
-      if (hasAttrs && Object.keys(built).length === 0) continue;
-
-      // Merge new keys into existing attributes (don't overwrite).
-      const merged = { ...(v.attributes || {}) };
-      for (const [k, val] of Object.entries(built)) {
-        if (!merged[k]) merged[k] = val;
-      }
-      const cleanAttrs = sanitizeAttributes(merged) || {};
-      const key = buildAttributesKey(cleanAttrs);
-
-      try {
-        await variantsColl.updateOne(
-          { _id: v._id },
-          {
-            $set: {
-              attributes: cleanAttrs,
-              attributes_key: key,
-              description: v.description || "",
-            },
-          }
-        );
-        summary.variants_updated += 1;
-      } catch (err) {
-        summary.errors.push(`variant ${v._id}: ${err.message}`);
-      }
-    }
-
-    // ── 2. Product.option_types ──
-    const productsToInspect = await Product.find({}).select("_id option_types").lean();
-    for (const p of productsToInspect) {
-      const vDocs = await ProductVariant.find({ product_id: p._id }).select("attributes").lean();
-      const keys = new Set();
-      for (const v of vDocs) {
-        if (v.attributes) for (const k of Object.keys(v.attributes)) keys.add(k);
-      }
-      const existing = Array.isArray(p.option_types) ? p.option_types : [];
-      const next = [...new Set([...existing, ...keys])];
-      // Sort by traditional order if recognised, then alphabetical.
-      const priority = ["size", "color", "charm"];
-      next.sort((a, b) => {
-        const ai = priority.indexOf(a);
-        const bi = priority.indexOf(b);
-        if (ai !== -1 && bi !== -1) return ai - bi;
-        if (ai !== -1) return -1;
-        if (bi !== -1) return 1;
-        return a.localeCompare(b);
-      });
-      if (existing.join(",") !== next.join(",")) {
-        await Product.updateOne({ _id: p._id }, { $set: { option_types: next } });
-        summary.products_updated_option_types += 1;
-      }
-    }
-
-    // ── 3. CartItem snapshots ──
-    const cartItemsColl = CartItem.collection;
-    const rawCart = await cartItemsColl
-      .find({}, { projection: { variant_id: 1, size: 1, color: 1, attributes: 1 } })
-      .toArray();
-    for (const ci of rawCart) {
-      const hasAttrs = ci.attributes && Object.keys(ci.attributes).length > 0;
-      let attrs = {};
-      if (hasAttrs) attrs = { ...ci.attributes };
-      if (ci.variant_id) {
-        const v = await ProductVariant.findById(ci.variant_id).lean();
-        if (v?.attributes) {
-          for (const [k, val] of Object.entries(v.attributes)) {
-            if (!attrs[k]) attrs[k] = val;
-          }
-        }
-      }
-      if (ci.size && !attrs.size) attrs.size = String(ci.size).trim();
-      if (ci.color && !attrs.color) attrs.color = String(ci.color).trim();
-      const cleanAttrs = sanitizeAttributes(attrs) || {};
-      if (Object.keys(cleanAttrs).length === 0 && hasAttrs) continue;
-      try {
-        await cartItemsColl.updateOne({ _id: ci._id }, { $set: { attributes: cleanAttrs } });
-        summary.cart_items_updated += 1;
-      } catch (err) {
-        summary.errors.push(`cart_item ${ci._id}: ${err.message}`);
-      }
-    }
-
-    // ── 4. OrderItem snapshots ──
-    const orderItemsColl = OrderItem.collection;
-    const rawOrder = await orderItemsColl
-      .find({}, { projection: { variant_id: 1, size: 1, color: 1, attributes: 1 } })
-      .toArray();
-    for (const oi of rawOrder) {
-      const hasAttrs = oi.attributes && Object.keys(oi.attributes).length > 0;
-      let attrs = hasAttrs ? { ...oi.attributes } : {};
-      if (oi.size && !attrs.size) attrs.size = String(oi.size).trim();
-      if (oi.color && !attrs.color) attrs.color = String(oi.color).trim();
-      const cleanAttrs = sanitizeAttributes(attrs) || {};
-      if (Object.keys(cleanAttrs).length === 0 && hasAttrs) continue;
-      try {
-        await orderItemsColl.updateOne({ _id: oi._id }, { $set: { attributes: cleanAttrs } });
-        summary.order_items_updated += 1;
-      } catch (err) {
-        summary.errors.push(`order_item ${oi._id}: ${err.message}`);
-      }
-    }
-
-    // ── 5. Drop legacy size/color from product_variants (and indexes) ──
-    try {
-      const u = await variantsColl.updateMany({}, { $unset: { size: "", color: "" } });
-      summary.legacy_fields_unset = u.modifiedCount || 0;
-    } catch (err) {
-      summary.errors.push(`unset legacy fields: ${err.message}`);
-    }
-    try {
-      const idx = await variantsColl.indexes();
-      for (const i of idx) {
-        if (i.name && i.name.includes("size_1") && i.name.includes("color_1")) {
-          await variantsColl.dropIndex(i.name);
-        }
-      }
-    } catch (err) {
-      summary.errors.push(`drop legacy index: ${err.message}`);
-    }
-
-    return res.status(200).json({ message: "Migration complete.", ...summary });
-  } catch (error) {
-    console.error("Variant migration error:", error);
-    return res.status(500).json({
-      message: "Variant migration failed",
-      error: error.message,
-      partial: summary,
-    });
-  }
-};

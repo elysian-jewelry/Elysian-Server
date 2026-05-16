@@ -30,7 +30,6 @@ import {
   myAdminStatus,
   listCategories,
   updateCategory,
-  migrateVariantAttributes,
 } from "../controllers/admin.controller.js";
 import { uploadProductImagesMulter } from "../middlewares/multerProductImages.middleware.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js";
@@ -138,9 +137,6 @@ router.get("/me/admin-status", myAdminStatus);
 // ─── Product category management (reorder + toggle only; creation/deletion is automatic) ───
 router.get("/admin/categories", listCategories);
 router.put("/admin/categories/:id", updateCategory);
-
-// ─── One-shot data migration (idempotent) ───
-router.post("/admin/maintenance/migrate-variant-attributes", migrateVariantAttributes);
 
 router.post("/admin/jobs/birthday-reminder", async (req, res) => {
   try {

@@ -1,8 +1,8 @@
 // models/ProductVariant.js
 //
 // A variant of a product is identified by its `attributes` map — a flexible
-// key/value bag of option values (e.g. {size: "M", color: "Gold", charm: "Star"}).
-// The set of attribute KEYS a product uses is declared on `Product.option_types`
+// key/value bag of option values (e.g. {color: "Gold"}).
+// Each product declares a single `option_type` (e.g. "color", "size", "charm")
 // so the admin UI and the cart can drive themselves dynamically.
 //
 // Uniqueness within a product is enforced via `attributes_key`, a stable
@@ -45,10 +45,8 @@ const productVariantSchema = new mongoose.Schema(
       ref: "Product",
       required: true,
     },
-    // The set of option values for this variant. Keys MUST be a subset of
-    // the parent product's `option_types`. Values are short strings
-    // (e.g. "Gold", "M", "Star Pendant"). Stored as a Map so each variant
-    // can use whatever option keys apply to its product.
+    // The option value for this variant. The key MUST match the parent
+    // product's `option_type`. Stored as a Map for flexibility.
     attributes: {
       type: Map,
       of: String,

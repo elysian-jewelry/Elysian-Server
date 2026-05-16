@@ -27,23 +27,13 @@ const productSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    // The list of variant attribute keys this product uses (e.g. ["size",
-    // "color", "charm"]). Drives the admin variant form and the frontend
-    // variant picker. Lower-cased canonical keys; display labels are
-    // derived by title-casing.
-    option_types: {
-      type: [String],
-      default: [],
-      set: (arr) =>
-        Array.isArray(arr)
-          ? Array.from(
-              new Set(
-                arr
-                  .map((s) => String(s || "").trim().toLowerCase())
-                  .filter(Boolean)
-              )
-            )
-          : [],
+    // The single variant attribute key this product uses (e.g. "size",
+    // "color", "charm"). Drives the admin variant form and the frontend
+    // variant picker. Lower-cased canonical; display label derived by title-casing.
+    option_type: {
+      type: String,
+      default: null,
+      set: (v) => (v ? String(v).trim().toLowerCase() : null),
     },
     sort_order: { type: Number, default: 0 },
     images: [

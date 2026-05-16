@@ -127,8 +127,8 @@ const formatProductResponse = (productsRaw) => {
       delete plain.price; // remove product-level price if variants exist
     }
 
-    // Ensure option_types is always an array on the wire.
-    plain.option_types = Array.isArray(plain.option_types) ? plain.option_types : [];
+    // Ensure option_type is a string or null on the wire.
+    plain.option_type = plain.option_type || null;
 
     plain.product_id = plain._id;
     delete plain._id;
