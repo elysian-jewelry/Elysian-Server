@@ -229,13 +229,55 @@ export const checkout = async (req, res) => {
 
     await OrderItem.insertMany(orderItems);
 
+    // Track stock changes: variant/product id → remaining stock after this purchase.
+    const stockUpdates = [];
     for (const item of cart.items) {
       if (item.variant_id) {
         item.variant_id.stock_quantity -= item.quantity;
         await item.variant_id.save();
+        stockUpdates.push({
+          variant_id: item.variant_id._id,
+          product_id: null,
+          remaining: item.variant_id.stock_quantity,
+        });
       } else {
         item.product_id.stock_quantity -= item.quantity;
         await item.product_id.save();
+        stockUpdates.push({
+          variant_id: null,
+          product_id: item.product_id._id,
+          remaining: item.product_id.stock_quantity,
+        });
+      }
+    }
+
+    // Adjust other users' carts: remove items at zero stock, cap quantities to remaining stock.
+    for (const { variant_id, product_id, remaining } of stockUpdates) {
+      const filter = { cart_id: { $ne: cart._id } };
+      if (variant_id) {
+        filter.variant_id = variant_id;
+      } else {
+        filter.product_id = product_id;
+        filter.variant_id = null;
+      }
+
+      if (remaining <= 0) {
+        const staleItems = await CartItem.find(filter).select("_id cart_id");
+        if (staleItems.length > 0) {
+          const staleIds = staleItems.map((ci) => ci._id);
+          const affectedCartIds = [...new Set(staleItems.map((ci) => String(ci.cart_id)))];
+          await CartItem.deleteMany({ _id: { $in: staleIds } });
+          await Cart.updateMany(
+            { _id: { $in: affectedCartIds } },
+            { $pull: { items: { $in: staleIds } } }
+          );
+        }
+      } else {
+        // Cap quantity to remaining stock for any cart item that exceeds it.
+        await CartItem.updateMany(
+          { ...filter, quantity: { $gt: remaining } },
+          { $set: { quantity: remaining } }
+        );
       }
     }
 

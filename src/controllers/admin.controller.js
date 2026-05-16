@@ -1000,12 +1000,26 @@ export const deleteProductsByNameAndType = async (req, res) => {
     // 3️⃣ Collect affected categories before deleting
     const affectedTypes = [...new Set(matchedProducts.map((p) => p.type))];
 
-    // 4️⃣ Delete products
+    // 4️⃣ Remove from all users' carts
+    const orphanedCartItems = await CartItem.find({
+      product_id: { $in: matchedIds },
+    }).select("_id cart_id");
+    if (orphanedCartItems.length > 0) {
+      const orphanedIds = orphanedCartItems.map((ci) => ci._id);
+      const affectedCartIds = [...new Set(orphanedCartItems.map((ci) => String(ci.cart_id)))];
+      await CartItem.deleteMany({ _id: { $in: orphanedIds } });
+      await Cart.updateMany(
+        { _id: { $in: affectedCartIds } },
+        { $pull: { items: { $in: orphanedIds } } }
+      );
+    }
+
+    // 5️⃣ Delete products
     const deleteResult = await Product.deleteMany({
       _id: { $in: matchedIds },
     });
 
-    // 5️⃣ Re-sequence sort_order per affected category
+    // 6️⃣ Re-sequence sort_order per affected category
     for (const type of affectedTypes) {
       const remaining = await Product.find({ type })
         .sort({ sort_order: 1 })
