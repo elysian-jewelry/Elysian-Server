@@ -1273,11 +1273,10 @@ export const addProductsWithVariants = async (req, res) => {
 
     if (Array.isArray(p.image_urls) && p.image_urls.length > 0) {
       const urls = p.image_urls.map((s) => s.trim());
-      const primaryI = primaryImageIndexFromUrls(urls);
       const toInsert = urls.map((image_url, i) => ({
         product_id: product._id,
         image_url,
-        is_primary: i === primaryI,
+        is_primary: i === 0,
       }));
       const createdImgs = await ProductImage.insertMany(toInsert, {
         ordered: true,
