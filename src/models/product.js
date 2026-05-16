@@ -35,7 +35,7 @@ const productSchema = new mongoose.Schema(
       default: null,
       set: (v) => (v ? String(v).trim().toLowerCase() : null),
     },
-    sort_order: { type: Number, default: 0 },
+    sort_order: { type: Number, default: 1 },
     images: [
       {
         type: mongoose.Schema.Types.ObjectId,
