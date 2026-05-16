@@ -1019,18 +1019,30 @@ export const deleteProductsByNameAndType = async (req, res) => {
       _id: { $in: matchedIds },
     });
 
-    // 6️⃣ Re-sequence sort_order per affected category
+    // 6️⃣ Re-sequence sort_order per affected category + auto-delete empty categories
     for (const type of affectedTypes) {
       const remaining = await Product.find({ type })
         .sort({ sort_order: 1 })
         .select("_id");
-      for (let i = 0; i < remaining.length; i++) {
-        await Product.updateOne(
-          { _id: remaining[i]._id },
-          { $set: { sort_order: i + 1 } }
-        );
+      if (remaining.length === 0) {
+        // Last product in this category was deleted — remove the category.
+        await ProductCategory.deleteOne({ name: type });
+      } else {
+        for (let i = 0; i < remaining.length; i++) {
+          await Product.updateOne(
+            { _id: remaining[i]._id },
+            { $set: { sort_order: i + 1 } }
+          );
+        }
       }
     }
+
+    // Re-sequence category sort_orders to fill gaps.
+    const allCats = await ProductCategory.find({}).sort({ sort_order: 1 }).select("_id");
+    for (let i = 0; i < allCats.length; i++) {
+      await ProductCategory.updateOne({ _id: allCats[i]._id }, { $set: { sort_order: i + 1 } });
+    }
+    invalidateCategoryCache();
 
     return res.status(200).json({
       message: "Products deleted successfully",
@@ -1205,11 +1217,15 @@ export const addProductsWithVariants = async (req, res) => {
       });
     }
 
-    // Validate the category against the admin-managed list.
+    // Auto-create category if it doesn't exist yet (sort_order = max + 1).
     if (!(await isValidCategory(p.type))) {
-      return res.status(400).json({
-        message: `Invalid category '${p.type}'. Add it under Categories in admin tools first.`,
+      const max = await ProductCategory.findOne({}).sort({ sort_order: -1 }).select("sort_order").lean();
+      await ProductCategory.create({
+        name: p.type,
+        sort_order: (max?.sort_order || 0) + 1,
+        is_active: true,
       });
+      invalidateCategoryCache();
     }
 
     const existing = await Product.findOne({
@@ -2744,58 +2760,9 @@ export const listCategories = async (req, res) => {
 };
 
 /** POST /admin/categories — body { name, sort_order?, is_active? }. */
-export const createCategory = async (req, res) => {
-  try {
-    const name = normalizeCategoryName(req.body?.name);
-    if (!name) {
-      return res.status(400).json({ message: "name is required." });
-    }
-    if (name.length > 64) {
-      return res.status(400).json({ message: "name must be 64 characters or fewer." });
-    }
-
-    let sort_order;
-    if (req.body?.sort_order !== undefined) {
-      const n = Number(req.body.sort_order);
-      if (!Number.isInteger(n) || n < 0) {
-        return res.status(400).json({ message: "sort_order must be a non-negative integer." });
-      }
-      sort_order = n;
-    } else {
-      // Default to "next available" so new categories land at the bottom.
-      const max = await ProductCategory.findOne({}).sort({ sort_order: -1 }).select("sort_order").lean();
-      sort_order = (max?.sort_order || 0) + 1;
-    }
-
-    const is_active =
-      req.body?.is_active === undefined ? true : Boolean(req.body.is_active);
-
-    const doc = await ProductCategory.create({ name, sort_order, is_active });
-    invalidateCategoryCache();
-
-    return res.status(201).json({
-      message: "Category created.",
-      category: {
-        id: doc._id,
-        name: doc.name,
-        sort_order: doc.sort_order,
-        is_active: doc.is_active,
-        product_count: 0,
-      },
-    });
-  } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({ message: "Category with this name already exists." });
-    }
-    if (error.name === "ValidationError") {
-      return res.status(400).json({ message: error.message });
-    }
-    console.error("createCategory error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
-  }
-};
 
 /** PUT /admin/categories/:id — body { name?, sort_order?, is_active? }. */
+/** PUT /admin/categories/:id — only sort_order and is_active are editable. */
 export const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
@@ -2809,21 +2776,6 @@ export const updateCategory = async (req, res) => {
     }
 
     const updates = {};
-    let nameChange = null;
-
-    if (req.body?.name !== undefined) {
-      const name = normalizeCategoryName(req.body.name);
-      if (!name) {
-        return res.status(400).json({ message: "name must be a non-empty string." });
-      }
-      if (name.length > 64) {
-        return res.status(400).json({ message: "name must be 64 characters or fewer." });
-      }
-      if (name !== current.name) {
-        updates.name = name;
-        nameChange = { from: current.name, to: name };
-      }
-    }
 
     if (req.body?.sort_order !== undefined) {
       const n = Number(req.body.sort_order);
@@ -2843,16 +2795,6 @@ export const updateCategory = async (req, res) => {
 
     Object.assign(current, updates);
     await current.save();
-
-    // Cascade rename: keep Product.type aligned with the canonical category name.
-    let productsRenamed = 0;
-    if (nameChange) {
-      const r = await Product.updateMany(
-        { type: nameChange.from },
-        { $set: { type: nameChange.to } }
-      );
-      productsRenamed = r.modifiedCount || 0;
-    }
     invalidateCategoryCache();
 
     return res.status(200).json({
@@ -2863,15 +2805,8 @@ export const updateCategory = async (req, res) => {
         sort_order: current.sort_order,
         is_active: current.is_active,
       },
-      products_renamed: productsRenamed,
     });
   } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({ message: "Another category with this name already exists." });
-    }
-    if (error.name === "ValidationError") {
-      return res.status(400).json({ message: error.message });
-    }
     console.error("updateCategory error:", error);
     return res.status(500).json({ message: "Internal server error", error: error.message });
   }
@@ -2881,38 +2816,6 @@ export const updateCategory = async (req, res) => {
  * DELETE /admin/categories/:id — refuses to delete a category that still
  * has products attached to it (admin must move/delete those first).
  */
-export const deleteCategory = async (req, res) => {
-  try {
-    const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid category id." });
-    }
-
-    const cat = await ProductCategory.findById(id);
-    if (!cat) {
-      return res.status(404).json({ message: "Category not found." });
-    }
-
-    const productCount = await Product.countDocuments({ type: cat.name });
-    if (productCount > 0) {
-      return res.status(400).json({
-        message: `Cannot delete '${cat.name}': it still has ${productCount} product(s). Move or delete them first.`,
-        product_count: productCount,
-      });
-    }
-
-    await cat.deleteOne();
-    invalidateCategoryCache();
-
-    return res.status(200).json({
-      message: "Category deleted.",
-      deleted: { id: cat._id, name: cat.name },
-    });
-  } catch (error) {
-    console.error("deleteCategory error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
-  }
-};
 
 // ─────────────────────────────────────────────────────────
 // ONE-TIME MIGRATION: legacy size/color → attributes Map

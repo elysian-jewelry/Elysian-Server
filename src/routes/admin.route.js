@@ -29,9 +29,7 @@ import {
   deleteAdmin,
   myAdminStatus,
   listCategories,
-  createCategory,
   updateCategory,
-  deleteCategory,
   migrateVariantAttributes,
 } from "../controllers/admin.controller.js";
 import { uploadProductImagesMulter } from "../middlewares/multerProductImages.middleware.js";
@@ -137,11 +135,9 @@ router.delete("/admin/admins/:id", deleteAdmin);
 // ─── Per-user admin status (authenticated, non-admin path) ───
 router.get("/me/admin-status", myAdminStatus);
 
-// ─── Product category management ───
+// ─── Product category management (reorder + toggle only; creation/deletion is automatic) ───
 router.get("/admin/categories", listCategories);
-router.post("/admin/categories", createCategory);
 router.put("/admin/categories/:id", updateCategory);
-router.delete("/admin/categories/:id", deleteCategory);
 
 // ─── One-shot data migration (idempotent) ───
 router.post("/admin/maintenance/migrate-variant-attributes", migrateVariantAttributes);
