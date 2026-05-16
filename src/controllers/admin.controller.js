@@ -1478,6 +1478,7 @@ export const updateProduct = async (req, res) => {
     price,
     is_new,
     new_name,
+    description: product_description,
     option_type: option_type_raw,
     // Variant edit by id (preferred — unambiguous):
     variant_id,
@@ -1552,6 +1553,7 @@ export const updateProduct = async (req, res) => {
 
     // 1️⃣ Update product-level fields
     if (new_name !== undefined) product.name = new_name.trim();
+    if (product_description !== undefined) product.description = String(product_description).trim();
     if (product_quantity !== undefined)
       product.stock_quantity = product_quantity;
     if (price !== undefined) product.price = price;

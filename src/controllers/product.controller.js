@@ -147,8 +147,8 @@ export const getAllProducts = async (req, res) => {
   try {
     const populateImages = {
   path: "images",
-  select: "image_url is_primary created_at",
-  options: { limit: 5 }
+  select: "image_url is_primary sort_order created_at",
+  options: { sort: { sort_order: 1 }, limit: 5 }
 };
     const populateVariants = { path: "product_variants", select: VARIANT_SELECT };
 
