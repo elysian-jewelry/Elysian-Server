@@ -3,9 +3,9 @@ import { birthdayPromoCron } from "./controllers/cron.controller.js";
 
 const startServer = async () => {
   const app = new App();
-  await app.connectToDatabase(); 
+  await app.connectToDatabase();
   app.initializeMiddlewares();
-  app.listen(); 
+  app.listen();
   birthdayPromoCron(); // ✅ Cron can run now
 };
 

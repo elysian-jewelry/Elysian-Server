@@ -191,15 +191,41 @@ export const checkout = async (req, res) => {
       phone_number,
     });
 
-    const orderItems = cart.items.map((item) => ({
-      order_id: order._id,
-      product_id: item.product_id._id,
-      variant_id: item.variant_id?._id || null,
-      size: item.variant_id?.size || item.size || null,
-      color: item.variant_id?.color || item.color || null,
-      quantity: item.quantity,
-      price: item.variant_id?.price || item.product_id.price,
-    }));
+    // Build a map of product_id → primary image url so each order_item carries
+    // a snapshot that survives later product deletion.
+    const productIds = [...new Set(cart.items.map((i) => String(i.product_id._id)))];
+    const primaryImages = await ProductImage.find({
+      product_id: { $in: productIds },
+      is_primary: true,
+    })
+      .select("product_id image_url")
+      .lean();
+    const imageByProduct = new Map(
+      primaryImages.map((img) => [String(img.product_id), img.image_url])
+    );
+
+    const attrsToObject = (m) => {
+      if (!m) return {};
+      if (m instanceof Map) return Object.fromEntries(m);
+      return { ...m };
+    };
+
+    const orderItems = cart.items.map((item) => {
+      const attributes =
+        attrsToObject(item.attributes) ||
+        attrsToObject(item.variant_id?.attributes);
+      return {
+        order_id: order._id,
+        product_id: item.product_id._id,
+        variant_id: item.variant_id?._id || null,
+        product_name: item.product_id.name || null,
+        product_type: item.product_id.type || null,
+        product_image_url: imageByProduct.get(String(item.product_id._id)) || null,
+        attributes,
+        quantity: item.quantity,
+        price: item.variant_id?.price || item.product_id.price,
+      };
+    });
 
     await OrderItem.insertMany(orderItems);
 
@@ -215,14 +241,22 @@ export const checkout = async (req, res) => {
 
     const shortOrderId = order._id.toString().slice(-5); // e.g., 'bb3f0'
 
+    const renderAttrs = (item) => {
+      const a =
+        attrsToObject(item.attributes) ||
+        attrsToObject(item.variant_id?.attributes);
+      return Object.entries(a)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ");
+    };
+
     const sheetData = cart.items.map((item) => [
       shortOrderId,
       `${first_name} ${last_name}`,
       item.product_id.type,
       item.product_id.name,
       item.quantity,
-      item.variant_id?.size || item.size || null,
-      item.variant_id?.color || item.color || null,
+      renderAttrs(item) || null,
       `${address}, ${apartment_no}, ${city}, ${governorateName}`,
       phone_number,
       "Pending",
@@ -248,8 +282,9 @@ export const checkout = async (req, res) => {
         name: item.product_id.name,
         type: item.product_id.type,
         quantity: item.quantity,
-        size: item.variant_id?.size || item.size || null,
-        color: item.variant_id?.color || item.color || null,
+        attributes:
+          attrsToObject(item.attributes) ||
+          attrsToObject(item.variant_id?.attributes),
         price: item.variant_id?.price || item.product_id.price,
       })),
       phone_number
@@ -340,14 +375,21 @@ export const getUserOrders = async (req, res) => {
       const orderId = item.order_id.toString();
       if (!itemsByOrder[orderId]) itemsByOrder[orderId] = [];
 
+      const attrsRaw = item.attributes;
+      const attributes =
+        attrsRaw instanceof Map ? Object.fromEntries(attrsRaw) : { ...(attrsRaw || {}) };
       itemsByOrder[orderId].push({
         product_id: item.product_id?._id,
-        name: item.product_id?.name || null,
+        // Snapshot fields survive product deletion.
+        name: item.product_name || item.product_id?.name || "Deleted Product",
+        type: item.product_type || null,
         quantity: item.quantity,
         price: parseFloat(item.price),
-        size: item.size,
-        color: item.color,
-        image_url: item.product_id?.images?.[0]?.image_url || null,
+        attributes,
+        image_url:
+          item.product_image_url ||
+          item.product_id?.images?.[0]?.image_url ||
+          null,
       });
     }
 

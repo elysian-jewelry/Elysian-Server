@@ -15,24 +15,18 @@ export const getCategories = async (req, res) => {
   }
 };
 
-/**
- * Read the singleton home-sections document. Returns `{ featured: [], new_arrivals: [] }`
- * if it has not been created yet.
- */
 const loadHomeSection = async () => {
   const doc = await HomeSection.findOne({ key: "home" }).lean();
   return doc || { featured: [], new_arrivals: [] };
 };
 
-/**
- * Hydrate a list of product ObjectIds into fully-populated product documents,
- * preserving the curator's ordering. Products that no longer exist are skipped.
- */
+const VARIANT_SELECT = "_id attributes price stock_quantity description";
+
 const hydrateProductIds = async (ids) => {
   if (!Array.isArray(ids) || ids.length === 0) return [];
   const products = await Product.find({ _id: { $in: ids } })
     .populate({ path: "images", select: "image_url is_primary", options: { limit: 5 } })
-    .populate({ path: "product_variants", select: "size price color stock_quantity" });
+    .populate({ path: "product_variants", select: VARIANT_SELECT });
 
   const byId = new Map(products.map((p) => [String(p._id), p]));
   return ids.map((id) => byId.get(String(id))).filter(Boolean);
@@ -66,7 +60,12 @@ export const getNewArrivalProducts = async (req, res) => {
   }
 };
 
-
+// Convert a Mongoose Map (or plain object) into a serializable plain object.
+const attrsToObject = (m) => {
+  if (!m) return {};
+  if (m instanceof Map) return Object.fromEntries(m);
+  return { ...m };
+};
 
 export const getProductsByType = async (req, res) => {
   try {
@@ -79,7 +78,7 @@ export const getProductsByType = async (req, res) => {
     }
 
     const populateImages = { path: "images", select: "image_url is_primary", options: { limit: 5 } };
-    const populateVariants = { path: "product_variants", select: "variant_id size color price stock_quantity" };
+    const populateVariants = { path: "product_variants", select: VARIANT_SELECT };
 
     const ordered = await Product.find({ type, sort_order: { $gt: 0 } })
       .populate(populateImages)
@@ -92,70 +91,35 @@ export const getProductsByType = async (req, res) => {
 
     const products = [...ordered, ...unordered];
 
-    const formatted = products.map((product) => {
-      const productObj = product.toObject();
-
-      // 🆕 Sort images so primary comes first
-      if (productObj.images && productObj.images.length > 0) {
-        productObj.images.sort((a, b) => b.is_primary - a.is_primary);
-      }
-
-      // Format variants
-      const variants = productObj.product_variants?.map(v => ({
-        variant_id: v._id,
-        size: v.size,
-        color: v.color,
-        price: v.price,
-        stock_quantity: v.stock_quantity
-      })) || [];
-
-      if (variants.length > 0) {
-        productObj.variants = variants;
-        delete productObj.price; // remove product-level price if variants exist
-      }
-
-      // Normalize product_id
-      productObj.product_id = productObj._id;
-      delete productObj._id;
-      delete productObj.__v;
-      delete productObj.product_variants;
-
-      return productObj;
-    });
-
-    res.status(200).json(formatted);
+    return res.status(200).json(formatProductResponse(products));
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error fetching products by type", error });
   }
 };
 
-
-
 const formatProductResponse = (productsRaw) => {
-  return productsRaw.map(product => {
+  return productsRaw.map((product) => {
     const plain =
       typeof product.toObject === "function"
         ? product.toObject()
         : { ...product };
 
-      // 🆕 Sort images so primary image comes first
+    // Sort images so primary image comes first
     if (plain.images && plain.images.length > 0) {
       plain.images.sort((a, b) => b.is_primary - a.is_primary);
     }
 
-
     const variants = plain.product_variants?.length
-      ? plain.product_variants.map(v => ({
+      ? plain.product_variants.map((v) => ({
           variant_id: v._id,
-          size: v.size,
-          color: v.color,
+          attributes: attrsToObject(v.attributes),
+          description: v.description || "",
           price: v.price,
-          stock_quantity: v.stock_quantity
+          stock_quantity: v.stock_quantity,
         }))
       : [];
 
-    // Clean up the raw fields
     delete plain.product_variants;
 
     if (variants.length > 0) {
@@ -163,7 +127,9 @@ const formatProductResponse = (productsRaw) => {
       delete plain.price; // remove product-level price if variants exist
     }
 
-    // Rename _id to product_id for compatibility
+    // Ensure option_types is always an array on the wire.
+    plain.option_types = Array.isArray(plain.option_types) ? plain.option_types : [];
+
     plain.product_id = plain._id;
     delete plain._id;
     delete plain.__v;
@@ -172,11 +138,10 @@ const formatProductResponse = (productsRaw) => {
   });
 };
 
-
 export const getAllProducts = async (req, res) => {
   try {
     const populateImages = { path: "images", select: "image_url is_primary", options: { limit: 5 } };
-    const populateVariants = { path: "product_variants", select: "size price color stock_quantity" };
+    const populateVariants = { path: "product_variants", select: VARIANT_SELECT };
 
     const ordered = await Product.find({ sort_order: { $gt: 0 } })
       .populate(populateImages)

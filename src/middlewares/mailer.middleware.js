@@ -63,6 +63,18 @@ export const sendOrderConfirmationEmail = async (
   items,
   phone_number
 ) => {
+  const titleCase = (s) =>
+    String(s || "").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const renderOptions = (attrs) => {
+    if (!attrs) return "-";
+    const entries = Object.entries(attrs).filter(([, v]) => v != null && String(v).trim());
+    if (entries.length === 0) return "-";
+    return entries
+      .map(([k, v]) => `<strong>${titleCase(k)}:</strong> ${v}`)
+      .join(" &middot; ");
+  };
+
   // Build product rows
   const productListHtml = items
     .map(
@@ -71,8 +83,7 @@ export const sendOrderConfirmationEmail = async (
         <td style="padding: 10px; text-align: center;">${item.name}</td>
         <td style="padding: 10px; text-align: center;">${item.type}</td>
         <td style="padding: 10px; text-align: center;">${item.quantity}</td>
-        <td style="padding: 10px; text-align: center;">${item.size || '-'}</td>
-        <td style="padding: 10px; text-align: center;">${item.color || '-'}</td>
+        <td style="padding: 10px; text-align: center;">${renderOptions(item.attributes)}</td>
         <td style="padding: 10px; text-align: center;">${item.price} EGP</td>
       </tr>
     `
@@ -161,8 +172,7 @@ const summaryHtml = `
             <th style="padding: 12px; text-align: center; color: #111;">Product</th>
             <th style="padding: 12px; text-align: center; color: #111;">Type</th>
             <th style="padding: 12px; text-align: center; color: #111;">Quantity</th>
-            <th style="padding: 12px; text-align: center; color: #111;">Size</th>
-            <th style="padding: 12px; text-align: center; color: #111;">Color</th>
+            <th style="padding: 12px; text-align: center; color: #111;">Options</th>
             <th style="padding: 12px; text-align: center; color: #111;">Price</th>
           </tr>
         </thead>
