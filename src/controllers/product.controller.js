@@ -140,7 +140,11 @@ const formatProductResponse = (productsRaw) => {
 
 export const getAllProducts = async (req, res) => {
   try {
-    const populateImages = { path: "images", select: "image_url is_primary", options: { limit: 5 } };
+    const populateImages = {
+  path: "images",
+  select: "image_url is_primary created_at",
+  options: { limit: 5 }
+};
     const populateVariants = { path: "product_variants", select: VARIANT_SELECT };
 
     const ordered = await Product.find({ sort_order: { $gt: 0 } })
