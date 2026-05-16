@@ -1233,6 +1233,16 @@ export const addProductsWithVariants = async (req, res) => {
       });
     }
 
+    // ADD THIS HERE
+    await Product.updateMany(
+      {
+        sort_order: { $gte: p.sort_order },
+      },
+      {
+        $inc: { sort_order: 1 },
+      }
+    );
+
     const product = await Product.create({
       name: p.name,
       description: p.description,
