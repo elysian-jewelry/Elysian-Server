@@ -81,7 +81,7 @@ const productVariantSchema = new mongoose.Schema(
 
 // Keep `attributes_key` in sync with `attributes` on every save and
 // findOneAndUpdate.
-productVariantSchema.pre("save", function (next) {
+productVariantSchema.pre("validate", function (next) {
   this.attributes_key = buildAttributesKey(this.attributes);
   next();
 });
