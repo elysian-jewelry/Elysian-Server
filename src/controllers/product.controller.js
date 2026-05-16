@@ -1,141 +1,67 @@
 import Product from "../models/product.js";
-import OrderItem from "../models/orderItem.js";
+import HomeSection from "../models/homeSection.js";
+import ProductCategory from "../models/productCategory.js";
 
 export const getCategories = async (req, res) => {
   try {
-    const categories = await Product.distinct("type");
-    res.status(200).json(categories.sort());
+    const managed = await ProductCategory.find({ is_active: true })
+      .sort({ sort_order: 1, name: 1 })
+      .select("name")
+      .lean();
+    return res.status(200).json(managed.map((c) => c.name));
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error fetching categories", error });
+    return res.status(500).json({ message: "Error fetching categories", error });
   }
+};
+
+/**
+ * Read the singleton home-sections document. Returns `{ featured: [], new_arrivals: [] }`
+ * if it has not been created yet.
+ */
+const loadHomeSection = async () => {
+  const doc = await HomeSection.findOne({ key: "home" }).lean();
+  return doc || { featured: [], new_arrivals: [] };
+};
+
+/**
+ * Hydrate a list of product ObjectIds into fully-populated product documents,
+ * preserving the curator's ordering. Products that no longer exist are skipped.
+ */
+const hydrateProductIds = async (ids) => {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const products = await Product.find({ _id: { $in: ids } })
+    .populate({ path: "images", select: "image_url is_primary", options: { limit: 5 } })
+    .populate({ path: "product_variants", select: "size price color stock_quantity" });
+
+  const byId = new Map(products.map((p) => [String(p._id), p]));
+  return ids.map((id) => byId.get(String(id))).filter(Boolean);
 };
 
 export const getFeaturedProducts = async (req, res) => {
   try {
-    // 1️⃣ Aggregate most ordered products
-    const aggregated = await OrderItem.aggregate([
-      {
-        $group: {
-          _id: "$product_id",
-          totalOrdered: { $sum: "$quantity" },
-        },
-      },
-      { $sort: { totalOrdered: -1 } },
-      { $limit: 20 }, // take more to allow filtering
-    ]);
-
-    if (!aggregated.length) {
-      return res.status(200).json([]);
-    }
-
-    const productIds = aggregated.map(p => p._id);
-
-    // 2️⃣ Fetch products WITHOUT variants
-    const products = await Product.find({
-      _id: { $in: productIds },
-      $or: [
-        { product_variants: { $exists: false } },
-        { product_variants: { $size: 0 } },
-      ],
-    })
-      .populate({
-        path: "images",
-        select: "image_url is_primary",
-        options: { limit: 5 },
-      });
-
-    // 3️⃣ Preserve order and limit to top 4
-    const orderedProducts = aggregated
-      .map(a =>
-        products.find(p => p._id.toString() === a._id.toString())
-      )
-      .filter(Boolean)
-      .slice(0, 4);
-
-    res.status(200).json(formatProductResponse(orderedProducts));
+    const home = await loadHomeSection();
+    const products = await hydrateProductIds(home.featured);
+    return res.status(200).json(formatProductResponse(products));
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
+    console.error("Error fetching featured products:", error);
+    return res.status(500).json({
       message: "Error fetching featured products",
-      error,
+      error: error.message,
     });
   }
 };
 
-
 export const getNewArrivalProducts = async (req, res) => {
   try {
-    const products = await Product.aggregate([
-      {
-        $match: {
-          type: {
-            $in: [
-              "Earrings",
-              "Hand Chains",
-              "Necklaces",
-              "Bracelets",
-              "Body Chains",
-              "Rings",
-              "Back Chains",
-              "Waist Chains",
-            ],
-          },
-          is_new: true,
-
-          // keep product if:
-          // 1) main stock > 0
-          // OR
-          // 2) it has variants (even if their stock is 0)
-          $or: [
-            { stock_quantity: { $gt: 0 } },
-            { product_variants: { $exists: true, $ne: [] } },
-          ],
-        },
-      },
-
-      // newest first
-      { $sort: { created_at: -1 } },
-
-      // group by category
-      {
-        $group: {
-          _id: "$type",
-          products: { $push: "$$ROOT" },
-        },
-      },
-
-      // max 2 per category
-      {
-        $project: {
-          products: { $slice: ["$products", 2] },
-        },
-      },
-
-      // flatten back
-      { $unwind: "$products" },
-      { $replaceRoot: { newRoot: "$products" } },
-
-      // optional final sort
-      { $sort: { created_at: -1 } },
-    ]);
-
-    let populatedProducts = await Product.populate(products, {
-      path: "images",
-      select: "image_url is_primary",
-      options: { limit: 5 },
-    });
-
-    populatedProducts = await Product.populate(populatedProducts, {
-      path: "product_variants",
-      select: "size price color stock_quantity",
-    });
-
-    return res.status(200).json(formatProductResponse(populatedProducts));
+    const home = await loadHomeSection();
+    const products = await hydrateProductIds(home.new_arrivals);
+    return res.status(200).json(formatProductResponse(products));
   } catch (error) {
     console.error("Error fetching new arrivals:", error);
     return res.status(500).json({
       message: "Error fetching new arrivals",
+      error: error.message,
     });
   }
 };

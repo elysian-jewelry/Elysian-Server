@@ -12,6 +12,16 @@ import ProductImage from "../models/productImage.js";
 import Cart from "../models/cart.js";
 import CartItem from "../models/cartItem.js";
 import GovOrderRate from "../models/govOrderRate.js";
+import HomeSection from "../models/homeSection.js";
+import Admin from "../models/admin.js";
+import ProductCategory from "../models/productCategory.js";
+import { buildAttributesKey } from "../models/productVariant.js";
+import { invalidateAdminCache } from "../services/adminCache.service.js";
+import {
+  getCategoryNameSet,
+  invalidateCategoryCache,
+  isValidCategory,
+} from "../services/categoryCache.service.js";
 import {
   uploadImageBufferToGcs,
   deleteObjectsByPublicUrls,
@@ -35,19 +45,8 @@ const BASE_URL = (
 // Allowed file extensions
 const ALLOWED = new Set([".webp", ".jpg", ".jpeg", ".png", ".gif"]);
 
-// Mirror your Product.type enum
-const PRODUCT_TYPES = new Set([
-  "Earrings",
-  "Necklaces",
-  "Bracelets",
-  "Hand Chains",
-  "Back Chains",
-  "Body Chains",
-  "Waist Chains",
-  "Sets",
-  "Rings",
-  "Bags",
-]);
+// Product categories are now managed in the `product_categories` collection.
+// The image-sync routines load the set lazily through `getCategoryNameSet()`.
 
 // Helpers
 function urlJoinEncoded(...parts) {
@@ -316,6 +315,7 @@ export const deleteUserOrdersByEmail = async (req, res) => {
  * 2) Scan disk and attach images per folder; primary = first file after sort.
  */
 export const syncFolderImagesToProducts = async (req, res) => {
+  const PRODUCT_TYPES = await getCategoryNameSet();
   const orphanByCategory = Object.fromEntries(
     [...PRODUCT_TYPES].map((t) => [t, 0])
   );
@@ -472,6 +472,7 @@ function mimeFromImageFilename(name) {
  * 3) Scan IMAGES_ROOT (same layout as local-folders sync), upload each file to GCS, save URLs in MongoDB
  */
 export const syncLocalImagesToGcsAndMongo = async (req, res) => {
+  const PRODUCT_TYPES = await getCategoryNameSet();
   const orphanByCategory = Object.fromEntries(
     [...PRODUCT_TYPES].map((t) => [t, 0])
   );
@@ -650,6 +651,197 @@ export const getAllUsersLatest = async (req, res) => {
   } catch (error) {
     console.error("Error fetching users:", error);
     return res.status(500).json({ message: "Internal server error", error });
+  }
+};
+
+// ─────────────────────────────────────────────────────────
+// HOME SECTIONS (admin-curated featured + new arrivals)
+// ─────────────────────────────────────────────────────────
+
+const HOME_SECTION_MAX = 5;
+const HOME_SECTION_KEYS = ["featured", "new_arrivals"];
+
+/**
+ * Populates a list of product ObjectIds with the minimal fields needed
+ * for the admin picker UI. Preserves curator ordering; drops missing rows.
+ */
+const populateHomeProducts = async (ids) => {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const products = await Product.find({ _id: { $in: ids } })
+    .populate({ path: "images", select: "image_url is_primary" })
+    .select("_id name type price stock_quantity images");
+  const byId = new Map(products.map((p) => [String(p._id), p]));
+  return ids
+    .map((id) => byId.get(String(id)))
+    .filter(Boolean)
+    .map((p) => {
+      const obj = p.toObject();
+      const imgs = obj.images || [];
+      const primary = imgs.find((i) => i.is_primary) || imgs[0] || null;
+      return {
+        product_id: obj._id,
+        name: obj.name,
+        type: obj.type,
+        price: obj.price,
+        stock_quantity: obj.stock_quantity,
+        image_url: primary?.image_url || null,
+      };
+    });
+};
+
+/** GET /admin/home-sections — return curated lists + every product available to pick from. */
+export const getHomeSections = async (req, res) => {
+  try {
+    const home = await HomeSection.findOne({ key: "home" }).lean();
+    const featuredIds = home?.featured || [];
+    const newArrivalsIds = home?.new_arrivals || [];
+
+    const [featured, new_arrivals, allProducts] = await Promise.all([
+      populateHomeProducts(featuredIds),
+      populateHomeProducts(newArrivalsIds),
+      Product.find({})
+        .populate({ path: "images", select: "image_url is_primary" })
+        .select("_id name type price stock_quantity images sort_order")
+        .sort({ type: 1, sort_order: 1, name: 1 })
+        .lean(),
+    ]);
+
+    const available = allProducts.map((p) => {
+      const imgs = p.images || [];
+      const primary = imgs.find((i) => i.is_primary) || imgs[0] || null;
+      return {
+        product_id: p._id,
+        name: p.name,
+        type: p.type,
+        price: p.price,
+        stock_quantity: p.stock_quantity,
+        image_url: primary?.image_url || null,
+      };
+    });
+
+    return res.status(200).json({
+      max_per_section: HOME_SECTION_MAX,
+      featured,
+      new_arrivals,
+      available_products: available,
+    });
+  } catch (error) {
+    console.error("getHomeSections error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/** PUT /admin/home-sections/:section — body { product_ids: ObjectId[] } */
+export const updateHomeSection = async (req, res) => {
+  try {
+    const section = String(req.params.section || "").trim();
+    if (!HOME_SECTION_KEYS.includes(section)) {
+      return res.status(400).json({
+        message: `Invalid section. Must be one of: ${HOME_SECTION_KEYS.join(", ")}.`,
+      });
+    }
+
+    const { product_ids } = req.body || {};
+    if (!Array.isArray(product_ids)) {
+      return res.status(400).json({ message: "product_ids must be an array of product IDs." });
+    }
+    if (product_ids.length > HOME_SECTION_MAX) {
+      return res.status(400).json({
+        message: `A maximum of ${HOME_SECTION_MAX} products can be selected per section.`,
+      });
+    }
+
+    // Deduplicate while preserving the admin's chosen order.
+    const seen = new Set();
+    const cleanIds = [];
+    for (const raw of product_ids) {
+      const s = String(raw || "").trim();
+      if (!mongoose.Types.ObjectId.isValid(s)) {
+        return res.status(400).json({ message: `Invalid product id: ${s}` });
+      }
+      if (seen.has(s)) continue;
+      seen.add(s);
+      cleanIds.push(s);
+    }
+
+    // Verify every id actually points at an existing product.
+    if (cleanIds.length > 0) {
+      const found = await Product.find({ _id: { $in: cleanIds } }).select("_id").lean();
+      if (found.length !== cleanIds.length) {
+        return res.status(400).json({
+          message: "One or more product IDs do not exist.",
+        });
+      }
+    }
+
+    const update = { $set: { [section]: cleanIds, key: "home" } };
+    const updated = await HomeSection.findOneAndUpdate(
+      { key: "home" },
+      update,
+      { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
+    ).lean();
+
+    const populated = await populateHomeProducts(updated[section] || []);
+    return res.status(200).json({
+      message: `${section.replace("_", " ")} updated.`,
+      section,
+      products: populated,
+    });
+  } catch (error) {
+    console.error("updateHomeSection error:", error);
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/**
+ * GET /admin/dashboard/users-by-location
+ * Returns registered-user counts grouped by country, governorate, and city.
+ * Only counts users captured with a known value for each dimension.
+ */
+export const getUsersByLocation = async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 100);
+
+    const [byCountry, byGovernorate, byCity, totalUsers, knownCountryCount] = await Promise.all([
+      User.aggregate([
+        { $match: { country: { $exists: true, $ne: null, $nin: ["", "Unknown"] } } },
+        { $group: { _id: "$country", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: limit },
+        { $project: { _id: 0, name: "$_id", count: 1 } },
+      ]),
+      User.aggregate([
+        { $match: { governorate: { $exists: true, $ne: null, $nin: ["", "Unknown"] } } },
+        { $group: { _id: { governorate: "$governorate", country: "$country" }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: limit },
+        { $project: { _id: 0, name: "$_id.governorate", country: "$_id.country", count: 1 } },
+      ]),
+      User.aggregate([
+        { $match: { city: { $exists: true, $ne: null, $nin: ["", "Unknown"] } } },
+        { $group: { _id: { city: "$city", country: "$country" }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: limit },
+        { $project: { _id: 0, city: "$_id.city", country: "$_id.country", count: 1 } },
+      ]),
+      User.countDocuments(),
+      User.countDocuments({ country: { $exists: true, $ne: null, $nin: ["", "Unknown"] } }),
+    ]);
+
+    return res.status(200).json({
+      total_users: totalUsers,
+      known_location_users: knownCountryCount,
+      unknown_location_users: Math.max(totalUsers - knownCountryCount, 0),
+      byCountry,
+      byGovernorate,
+      byCity,
+    });
+  } catch (error) {
+    console.error("Users by location error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
   }
 };
 
@@ -947,6 +1139,36 @@ export const addProductsWithVariants = async (req, res) => {
       }
     }
 
+    if (typeof p.option_types === "string" && p.option_types.trim() !== "") {
+      try {
+        p.option_types = JSON.parse(p.option_types);
+      } catch {
+        return res.status(400).json({ message: "option_types must be valid JSON" });
+      }
+    }
+    const optionTypes = normalizeOptionTypes(p.option_types);
+
+    // Pre-validate every supplied variant before any DB write.
+    if (Array.isArray(p.variants) && p.variants.length > 0) {
+      const seenKeys = new Set();
+      for (const v of p.variants) {
+        if (typeof v.price !== "number" || !Number.isFinite(v.price)) {
+          return res.status(400).json({ message: "Each variant must have a numeric price." });
+        }
+        const attrs = sanitizeAttributes(v.attributes) || {};
+        const err = validateVariantAttributes(attrs, optionTypes);
+        if (err) return res.status(400).json({ message: err });
+        const key = buildAttributesKey(attrs);
+        if (seenKeys.has(key)) {
+          return res.status(400).json({
+            message: "Two variants share the same attribute combination.",
+          });
+        }
+        seenKeys.add(key);
+        v._cleanAttributes = attrs;
+      }
+    }
+
     delete p.image_urls;
 
     const gcsUrls = [];
@@ -966,6 +1188,13 @@ export const addProductsWithVariants = async (req, res) => {
     if (!p.name || !p.type || typeof p.price !== "number") {
       return res.status(400).json({
         message: "Product must have name, type, and price (number)",
+      });
+    }
+
+    // Validate the category against the admin-managed list.
+    if (!(await isValidCategory(p.type))) {
+      return res.status(400).json({
+        message: `Invalid category '${p.type}'. Add it under Categories in admin tools first.`,
       });
     }
 
@@ -989,19 +1218,22 @@ export const addProductsWithVariants = async (req, res) => {
       is_new: p.is_new,
       stock_quantity: p.stock_quantity,
       sort_order: p.sort_order,
+      option_types: optionTypes,
     });
 
     if (Array.isArray(p.variants) && p.variants.length > 0) {
-      const variants = await ProductVariant.insertMany(
-        p.variants.map((v) => ({
+      // Create one-by-one so the pre-save hook can compute attributes_key.
+      const variants = [];
+      for (const v of p.variants) {
+        const doc = await ProductVariant.create({
           product_id: product._id,
-          size: v.size,
-          color: v.color,
+          attributes: v._cleanAttributes,
+          description: String(v.description || "").trim(),
           price: v.price,
           stock_quantity: v.stock_quantity || 0,
-        }))
-      );
-
+        });
+        variants.push(doc);
+      }
       product.product_variants = variants.map((v) => v._id);
       await product.save();
     }
@@ -1191,12 +1423,15 @@ export const updateProduct = async (req, res) => {
     price,
     is_new,
     new_name,
-    size,
-    color,
+    option_types,
+    // Variant edit by id (preferred — unambiguous):
+    variant_id,
+    // Variant edit by lookup (alternative):
+    match_attributes, // {key: value} to find the variant
     variant_quantity,
     variant_price,
-    new_size,
-    new_color,
+    variant_description,
+    new_attributes, // partial — overwrites the variant's attributes map
     add_variants,
   } = body;
 
@@ -1266,6 +1501,26 @@ export const updateProduct = async (req, res) => {
       product.stock_quantity = product_quantity;
     if (price !== undefined) product.price = price;
     if (is_new !== undefined) product.is_new = is_new;
+    if (option_types !== undefined) {
+      const normalized = normalizeOptionTypes(option_types);
+      // Refuse to drop an option_type while existing variants still use it.
+      const inUse = await ProductVariant.find({ product_id: product._id }).lean();
+      const stillUsed = new Set();
+      for (const v of inUse) {
+        if (v.attributes) {
+          // Mongoose returns Map as plain object in .lean()
+          for (const k of Object.keys(v.attributes)) stillUsed.add(k);
+        }
+      }
+      for (const k of stillUsed) {
+        if (!normalized.includes(k)) {
+          return res.status(400).json({
+            message: `Cannot remove option_type '${k}': existing variants still use it.`,
+          });
+        }
+      }
+      product.option_types = normalized;
+    }
 
     await product.save();
 
@@ -1287,7 +1542,8 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    // 2️⃣ Update ONE existing variant (find by size OR color)
+    // 2️⃣ Update ONE existing variant — identified by variant_id (preferred)
+    //    or by match_attributes.
     let updatedVariant = null;
     let carts_affected = 0;
     let cart_items_deleted = 0;
@@ -1295,8 +1551,8 @@ export const updateProduct = async (req, res) => {
     const wantsVariantUpdate =
       variant_quantity !== undefined ||
       variant_price !== undefined ||
-      new_size !== undefined ||
-      new_color !== undefined;
+      variant_description !== undefined ||
+      new_attributes !== undefined;
 
     if (wantsVariantUpdate) {
       if (variant_quantity !== undefined) {
@@ -1310,40 +1566,49 @@ export const updateProduct = async (req, res) => {
         }
       }
 
-      const hasSize = size !== undefined;
-      const hasColor = color !== undefined;
-
-      if (!hasSize && !hasColor) {
+      let variantDoc = null;
+      if (variant_id) {
+        if (!mongoose.Types.ObjectId.isValid(String(variant_id))) {
+          return res.status(400).json({ message: "Invalid variant_id." });
+        }
+        variantDoc = await ProductVariant.findOne({
+          _id: variant_id,
+          product_id: product._id,
+        });
+      } else if (match_attributes && typeof match_attributes === "object") {
+        const lookupAttrs = sanitizeAttributes(match_attributes) || {};
+        const lookupKey = buildAttributesKey(lookupAttrs);
+        variantDoc = await ProductVariant.findOne({
+          product_id: product._id,
+          attributes_key: lookupKey,
+        });
+      } else {
         return res.status(400).json({
-          message:
-            "Provide size or color to identify the variant you want to update.",
+          message: "Provide variant_id or match_attributes to identify the variant.",
         });
       }
 
-      const variantQuery = {
-        product_id: product._id,
-        ...(hasSize && { size }),
-        ...(hasColor && { color }),
-      };
-
-      const setFields = {};
-      if (variant_quantity !== undefined)
-        setFields.stock_quantity = variant_quantity;
-      if (variant_price !== undefined) setFields.price = variant_price;
-      if (new_size !== undefined) setFields.size = new_size;
-      if (new_color !== undefined) setFields.color = new_color;
-
-      updatedVariant = await ProductVariant.findOneAndUpdate(
-        variantQuery,
-        { $set: setFields },
-        { new: true }
-      );
-
-      if (!updatedVariant) {
-        return res.status(404).json({
-          message: "Product variant not found.",
-        });
+      if (!variantDoc) {
+        return res.status(404).json({ message: "Product variant not found." });
       }
+
+      if (variant_quantity !== undefined) variantDoc.stock_quantity = variant_quantity;
+      if (variant_price !== undefined) variantDoc.price = variant_price;
+      if (variant_description !== undefined) {
+        variantDoc.description = String(variant_description || "").trim();
+      }
+      if (new_attributes !== undefined) {
+        const cleanAttrs = sanitizeAttributes(new_attributes);
+        if (!cleanAttrs) {
+          return res.status(400).json({ message: "new_attributes must be an object." });
+        }
+        const attrErr = validateVariantAttributes(cleanAttrs, product.option_types);
+        if (attrErr) return res.status(400).json({ message: attrErr });
+        variantDoc.attributes = new Map(Object.entries(cleanAttrs));
+      }
+
+      await variantDoc.save();
+      updatedVariant = variantDoc;
 
       if (variant_quantity === 0) {
         const cartItemsToRemove = await CartItem.find({
@@ -1400,30 +1665,36 @@ export const updateProduct = async (req, res) => {
     let addedVariants = [];
 
     if (Array.isArray(add_variants) && add_variants.length > 0) {
+      const cleaned = [];
       for (const v of add_variants) {
         if (typeof v.price !== "number" || !Number.isFinite(v.price)) {
           return res.status(400).json({
             message: "Each new variant must have a numeric price.",
           });
         }
-        if (!v.size && !v.color) {
-          return res.status(400).json({
-            message:
-              "Each new variant must have at least size or color.",
-          });
-        }
-      }
-
-      const newDocs = await ProductVariant.insertMany(
-        add_variants.map((v) => ({
-          product_id: product._id,
-          size: v.size || undefined,
-          color: v.color || undefined,
+        const attrs = sanitizeAttributes(v.attributes) || {};
+        const err = validateVariantAttributes(attrs, product.option_types);
+        if (err) return res.status(400).json({ message: err });
+        cleaned.push({
+          attributes: attrs,
+          description: String(v.description || "").trim(),
           price: v.price,
           stock_quantity: v.stock_quantity || 0,
-        }))
-      );
+        });
+      }
 
+      // Pre-save hook computes attributes_key; create one-by-one.
+      const newDocs = [];
+      for (const c of cleaned) {
+        const doc = await ProductVariant.create({
+          product_id: product._id,
+          attributes: c.attributes,
+          description: c.description,
+          price: c.price,
+          stock_quantity: c.stock_quantity,
+        });
+        newDocs.push(doc);
+      }
       addedVariants = newDocs;
 
       product.product_variants.push(...newDocs.map((d) => d._id));
@@ -1539,7 +1810,7 @@ export const updateProduct = async (req, res) => {
 };
 
 export const deleteVariant = async (req, res) => {
-  const { name, type, size, color } = req.body;
+  const { name, type, variant_id, attributes } = req.body;
 
   if (!name || !type) {
     return res.status(400).json({
@@ -1547,12 +1818,9 @@ export const deleteVariant = async (req, res) => {
     });
   }
 
-  const hasSize = size !== undefined;
-  const hasColor = color !== undefined;
-
-  if (!hasSize && !hasColor) {
+  if (!variant_id && (!attributes || typeof attributes !== "object")) {
     return res.status(400).json({
-      message: "Provide size or color to identify the variant to delete.",
+      message: "Provide variant_id or attributes to identify the variant to delete.",
     });
   }
 
@@ -1562,13 +1830,23 @@ export const deleteVariant = async (req, res) => {
       return res.status(404).json({ message: "Product not found." });
     }
 
-    const variantQuery = {
-      product_id: product._id,
-      ...(hasSize && { size }),
-      ...(hasColor && { color }),
-    };
-
-    const variant = await ProductVariant.findOne(variantQuery);
+    let variant = null;
+    if (variant_id) {
+      if (!mongoose.Types.ObjectId.isValid(String(variant_id))) {
+        return res.status(400).json({ message: "Invalid variant_id." });
+      }
+      variant = await ProductVariant.findOne({
+        _id: variant_id,
+        product_id: product._id,
+      });
+    } else {
+      const cleanAttrs = sanitizeAttributes(attributes) || {};
+      const key = buildAttributesKey(cleanAttrs);
+      variant = await ProductVariant.findOne({
+        product_id: product._id,
+        attributes_key: key,
+      });
+    }
     if (!variant) {
       return res.status(404).json({ message: "Variant not found." });
     }
@@ -2243,5 +2521,563 @@ export const getMonthlyOrderTotals = async (req, res) => {
   } catch (error) {
     console.error("Error aggregating monthly order totals:", error);
     return res.status(500).json({ message: "Internal server error", error });
+  }
+};
+
+// ─────────────────────────────────────────────────────────
+// ADMIN ALLOWLIST MANAGEMENT
+// ─────────────────────────────────────────────────────────
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ─────────────────────────────────────────────────────────
+// VARIANT ATTRIBUTE HELPERS
+// ─────────────────────────────────────────────────────────
+
+/** Normalize an option-type list ("Size", "color ", "Charm") to ["size","color","charm"]. */
+const normalizeOptionTypes = (raw) => {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    const k = String(item || "").trim().toLowerCase();
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
+};
+
+/**
+ * Coerce a free-form attributes object into a clean {key: value} map where
+ * keys are lower-cased and trimmed and values are trimmed strings.
+ * Returns null if input is not an object.
+ */
+const sanitizeAttributes = (raw) => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const key = String(k || "").trim().toLowerCase();
+    const val = String(v ?? "").trim();
+    if (!key || !val) continue;
+    out[key] = val;
+  }
+  return out;
+};
+
+/**
+ * Verify every attribute key on a variant belongs to the product's
+ * `option_types`. Returns an error string or null when OK.
+ */
+const validateVariantAttributes = (attributes, optionTypes) => {
+  const allowed = new Set(optionTypes || []);
+  if (allowed.size === 0) {
+    if (Object.keys(attributes).length > 0) {
+      return "Product has no option_types declared; variants cannot have attributes.";
+    }
+    return null;
+  }
+  if (Object.keys(attributes).length === 0) {
+    return "Variant attributes are required when the product declares option_types.";
+  }
+  for (const key of Object.keys(attributes)) {
+    if (!allowed.has(key)) {
+      return `Attribute '${key}' is not part of this product's option_types.`;
+    }
+  }
+  return null;
+};
+
+/** GET /admin/admins — list every admin email. */
+export const listAdmins = async (req, res) => {
+  try {
+    const docs = await Admin.find({}).sort({ created_at: 1 }).lean();
+    return res.status(200).json({
+      count: docs.length,
+      admins: docs.map((d) => ({
+        id: d._id,
+        email: d.email,
+        added_by: d.added_by,
+        created_at: d.created_at,
+      })),
+    });
+  } catch (error) {
+    console.error("listAdmins error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/** POST /admin/admins — body { email }. */
+export const createAdmin = async (req, res) => {
+  try {
+    const rawEmail = String(req.body?.email || "").trim().toLowerCase();
+    if (!EMAIL_RE.test(rawEmail)) {
+      return res.status(400).json({ message: "email must be a valid email address." });
+    }
+
+    const doc = await Admin.create({
+      email: rawEmail,
+      added_by: req.user?.email || "unknown",
+    });
+    invalidateAdminCache();
+
+    return res.status(201).json({
+      message: "Admin added.",
+      admin: { id: doc._id, email: doc.email, added_by: doc.added_by, created_at: doc.created_at },
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ message: "Admin already exists." });
+    }
+    console.error("createAdmin error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/** DELETE /admin/admins/:id — refuses to delete the last remaining admin. */
+export const deleteAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid admin id." });
+    }
+
+    const total = await Admin.countDocuments();
+    if (total <= 1) {
+      return res.status(400).json({
+        message: "Cannot remove the last admin. Add another admin first.",
+      });
+    }
+
+    const target = await Admin.findById(id);
+    if (!target) {
+      return res.status(404).json({ message: "Admin not found." });
+    }
+
+    // Prevent operator from locking themselves out.
+    if (req.user?.email && req.user.email.toLowerCase() === target.email) {
+      return res.status(400).json({
+        message: "You cannot remove your own admin access.",
+      });
+    }
+
+    await target.deleteOne();
+    invalidateAdminCache();
+
+    return res.status(200).json({
+      message: "Admin removed.",
+      deleted: { id: target._id, email: target.email },
+    });
+  } catch (error) {
+    console.error("deleteAdmin error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/**
+ * GET /me/admin-status — used by the frontend gate. Authenticated; returns
+ * `{ is_admin: bool, email }` for the JWT-bearing user.
+ */
+export const myAdminStatus = async (req, res) => {
+  try {
+    const email = req.user?.email;
+    if (!email) {
+      return res.status(200).json({ is_admin: false, email: null });
+    }
+    const { isAdminEmail } = await import("../services/adminCache.service.js");
+    const ok = await isAdminEmail(email);
+    return res.status(200).json({ is_admin: !!ok, email });
+  } catch (error) {
+    console.error("myAdminStatus error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────
+// PRODUCT CATEGORY MANAGEMENT
+// ─────────────────────────────────────────────────────────
+
+const normalizeCategoryName = (raw) =>
+  String(raw || "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+/** GET /admin/categories — list every category (active or not), with product counts. */
+export const listCategories = async (req, res) => {
+  try {
+    const [cats, counts] = await Promise.all([
+      ProductCategory.find({}).sort({ sort_order: 1, name: 1 }).lean(),
+      Product.aggregate([
+        { $group: { _id: "$type", count: { $sum: 1 } } },
+      ]),
+    ]);
+    const countByName = new Map(counts.map((c) => [String(c._id), c.count]));
+    return res.status(200).json({
+      count: cats.length,
+      categories: cats.map((c) => ({
+        id: c._id,
+        name: c.name,
+        sort_order: c.sort_order,
+        is_active: c.is_active,
+        product_count: countByName.get(c.name) || 0,
+        created_at: c.created_at,
+      })),
+    });
+  } catch (error) {
+    console.error("listCategories error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/** POST /admin/categories — body { name, sort_order?, is_active? }. */
+export const createCategory = async (req, res) => {
+  try {
+    const name = normalizeCategoryName(req.body?.name);
+    if (!name) {
+      return res.status(400).json({ message: "name is required." });
+    }
+    if (name.length > 64) {
+      return res.status(400).json({ message: "name must be 64 characters or fewer." });
+    }
+
+    let sort_order;
+    if (req.body?.sort_order !== undefined) {
+      const n = Number(req.body.sort_order);
+      if (!Number.isInteger(n) || n < 0) {
+        return res.status(400).json({ message: "sort_order must be a non-negative integer." });
+      }
+      sort_order = n;
+    } else {
+      // Default to "next available" so new categories land at the bottom.
+      const max = await ProductCategory.findOne({}).sort({ sort_order: -1 }).select("sort_order").lean();
+      sort_order = (max?.sort_order || 0) + 1;
+    }
+
+    const is_active =
+      req.body?.is_active === undefined ? true : Boolean(req.body.is_active);
+
+    const doc = await ProductCategory.create({ name, sort_order, is_active });
+    invalidateCategoryCache();
+
+    return res.status(201).json({
+      message: "Category created.",
+      category: {
+        id: doc._id,
+        name: doc.name,
+        sort_order: doc.sort_order,
+        is_active: doc.is_active,
+        product_count: 0,
+      },
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ message: "Category with this name already exists." });
+    }
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error("createCategory error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/** PUT /admin/categories/:id — body { name?, sort_order?, is_active? }. */
+export const updateCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid category id." });
+    }
+
+    const current = await ProductCategory.findById(id);
+    if (!current) {
+      return res.status(404).json({ message: "Category not found." });
+    }
+
+    const updates = {};
+    let nameChange = null;
+
+    if (req.body?.name !== undefined) {
+      const name = normalizeCategoryName(req.body.name);
+      if (!name) {
+        return res.status(400).json({ message: "name must be a non-empty string." });
+      }
+      if (name.length > 64) {
+        return res.status(400).json({ message: "name must be 64 characters or fewer." });
+      }
+      if (name !== current.name) {
+        updates.name = name;
+        nameChange = { from: current.name, to: name };
+      }
+    }
+
+    if (req.body?.sort_order !== undefined) {
+      const n = Number(req.body.sort_order);
+      if (!Number.isInteger(n) || n < 0) {
+        return res.status(400).json({ message: "sort_order must be a non-negative integer." });
+      }
+      updates.sort_order = n;
+    }
+
+    if (req.body?.is_active !== undefined) {
+      updates.is_active = Boolean(req.body.is_active);
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "Nothing to update." });
+    }
+
+    Object.assign(current, updates);
+    await current.save();
+
+    // Cascade rename: keep Product.type aligned with the canonical category name.
+    let productsRenamed = 0;
+    if (nameChange) {
+      const r = await Product.updateMany(
+        { type: nameChange.from },
+        { $set: { type: nameChange.to } }
+      );
+      productsRenamed = r.modifiedCount || 0;
+    }
+    invalidateCategoryCache();
+
+    return res.status(200).json({
+      message: "Category updated.",
+      category: {
+        id: current._id,
+        name: current.name,
+        sort_order: current.sort_order,
+        is_active: current.is_active,
+      },
+      products_renamed: productsRenamed,
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ message: "Another category with this name already exists." });
+    }
+    if (error.name === "ValidationError") {
+      return res.status(400).json({ message: error.message });
+    }
+    console.error("updateCategory error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+/**
+ * DELETE /admin/categories/:id — refuses to delete a category that still
+ * has products attached to it (admin must move/delete those first).
+ */
+export const deleteCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid category id." });
+    }
+
+    const cat = await ProductCategory.findById(id);
+    if (!cat) {
+      return res.status(404).json({ message: "Category not found." });
+    }
+
+    const productCount = await Product.countDocuments({ type: cat.name });
+    if (productCount > 0) {
+      return res.status(400).json({
+        message: `Cannot delete '${cat.name}': it still has ${productCount} product(s). Move or delete them first.`,
+        product_count: productCount,
+      });
+    }
+
+    await cat.deleteOne();
+    invalidateCategoryCache();
+
+    return res.status(200).json({
+      message: "Category deleted.",
+      deleted: { id: cat._id, name: cat.name },
+    });
+  } catch (error) {
+    console.error("deleteCategory error:", error);
+    return res.status(500).json({ message: "Internal server error", error: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────
+// ONE-TIME MIGRATION: legacy size/color → attributes Map
+// ─────────────────────────────────────────────────────────
+
+/**
+ * POST /admin/maintenance/migrate-variant-attributes
+ *
+ * Backfills the new attribute-based variant schema from the legacy
+ * size/color columns:
+ *   1. For each ProductVariant: read raw size/color from the DB
+ *      (mongoose strips them after the schema change, so we use the
+ *      collection driver directly), build `attributes`, compute
+ *      `attributes_key`, save.
+ *   2. For each Product: derive `option_types` from the union of
+ *      its variants' attribute keys.
+ *   3. For each CartItem with variant_id: copy variant attributes
+ *      onto cart_item.attributes (snapshot).
+ *   4. For each OrderItem with variant_id (or legacy size/color):
+ *      build attributes from the OrderItem's own legacy columns.
+ *   5. After step 1 succeeds, $unset the legacy size/color columns
+ *      from product_variants so they don't shadow future writes.
+ *
+ * Idempotent — running twice is a no-op.
+ */
+export const migrateVariantAttributes = async (req, res) => {
+  const summary = {
+    variants_examined: 0,
+    variants_updated: 0,
+    products_updated_option_types: 0,
+    cart_items_updated: 0,
+    order_items_updated: 0,
+    legacy_fields_unset: 0,
+    errors: [],
+  };
+
+  try {
+    // ── 1. Variants ──
+    const variantsColl = ProductVariant.collection;
+    const rawVariants = await variantsColl
+      .find({}, { projection: { product_id: 1, size: 1, color: 1, attributes: 1, attributes_key: 1, description: 1 } })
+      .toArray();
+
+    for (const v of rawVariants) {
+      summary.variants_examined += 1;
+
+      const hasAttrs = v.attributes && Object.keys(v.attributes).length > 0;
+      const built = {};
+      if (v.size) built.size = String(v.size).trim();
+      if (v.color) built.color = String(v.color).trim();
+
+      // Skip when there's nothing legacy to convert and attributes are already set.
+      if (hasAttrs && Object.keys(built).length === 0) continue;
+
+      // Merge new keys into existing attributes (don't overwrite).
+      const merged = { ...(v.attributes || {}) };
+      for (const [k, val] of Object.entries(built)) {
+        if (!merged[k]) merged[k] = val;
+      }
+      const cleanAttrs = sanitizeAttributes(merged) || {};
+      const key = buildAttributesKey(cleanAttrs);
+
+      try {
+        await variantsColl.updateOne(
+          { _id: v._id },
+          {
+            $set: {
+              attributes: cleanAttrs,
+              attributes_key: key,
+              description: v.description || "",
+            },
+          }
+        );
+        summary.variants_updated += 1;
+      } catch (err) {
+        summary.errors.push(`variant ${v._id}: ${err.message}`);
+      }
+    }
+
+    // ── 2. Product.option_types ──
+    const productsToInspect = await Product.find({}).select("_id option_types").lean();
+    for (const p of productsToInspect) {
+      const vDocs = await ProductVariant.find({ product_id: p._id }).select("attributes").lean();
+      const keys = new Set();
+      for (const v of vDocs) {
+        if (v.attributes) for (const k of Object.keys(v.attributes)) keys.add(k);
+      }
+      const existing = Array.isArray(p.option_types) ? p.option_types : [];
+      const next = [...new Set([...existing, ...keys])];
+      // Sort by traditional order if recognised, then alphabetical.
+      const priority = ["size", "color", "charm"];
+      next.sort((a, b) => {
+        const ai = priority.indexOf(a);
+        const bi = priority.indexOf(b);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.localeCompare(b);
+      });
+      if (existing.join(",") !== next.join(",")) {
+        await Product.updateOne({ _id: p._id }, { $set: { option_types: next } });
+        summary.products_updated_option_types += 1;
+      }
+    }
+
+    // ── 3. CartItem snapshots ──
+    const cartItemsColl = CartItem.collection;
+    const rawCart = await cartItemsColl
+      .find({}, { projection: { variant_id: 1, size: 1, color: 1, attributes: 1 } })
+      .toArray();
+    for (const ci of rawCart) {
+      const hasAttrs = ci.attributes && Object.keys(ci.attributes).length > 0;
+      let attrs = {};
+      if (hasAttrs) attrs = { ...ci.attributes };
+      if (ci.variant_id) {
+        const v = await ProductVariant.findById(ci.variant_id).lean();
+        if (v?.attributes) {
+          for (const [k, val] of Object.entries(v.attributes)) {
+            if (!attrs[k]) attrs[k] = val;
+          }
+        }
+      }
+      if (ci.size && !attrs.size) attrs.size = String(ci.size).trim();
+      if (ci.color && !attrs.color) attrs.color = String(ci.color).trim();
+      const cleanAttrs = sanitizeAttributes(attrs) || {};
+      if (Object.keys(cleanAttrs).length === 0 && hasAttrs) continue;
+      try {
+        await cartItemsColl.updateOne({ _id: ci._id }, { $set: { attributes: cleanAttrs } });
+        summary.cart_items_updated += 1;
+      } catch (err) {
+        summary.errors.push(`cart_item ${ci._id}: ${err.message}`);
+      }
+    }
+
+    // ── 4. OrderItem snapshots ──
+    const orderItemsColl = OrderItem.collection;
+    const rawOrder = await orderItemsColl
+      .find({}, { projection: { variant_id: 1, size: 1, color: 1, attributes: 1 } })
+      .toArray();
+    for (const oi of rawOrder) {
+      const hasAttrs = oi.attributes && Object.keys(oi.attributes).length > 0;
+      let attrs = hasAttrs ? { ...oi.attributes } : {};
+      if (oi.size && !attrs.size) attrs.size = String(oi.size).trim();
+      if (oi.color && !attrs.color) attrs.color = String(oi.color).trim();
+      const cleanAttrs = sanitizeAttributes(attrs) || {};
+      if (Object.keys(cleanAttrs).length === 0 && hasAttrs) continue;
+      try {
+        await orderItemsColl.updateOne({ _id: oi._id }, { $set: { attributes: cleanAttrs } });
+        summary.order_items_updated += 1;
+      } catch (err) {
+        summary.errors.push(`order_item ${oi._id}: ${err.message}`);
+      }
+    }
+
+    // ── 5. Drop legacy size/color from product_variants (and indexes) ──
+    try {
+      const u = await variantsColl.updateMany({}, { $unset: { size: "", color: "" } });
+      summary.legacy_fields_unset = u.modifiedCount || 0;
+    } catch (err) {
+      summary.errors.push(`unset legacy fields: ${err.message}`);
+    }
+    try {
+      const idx = await variantsColl.indexes();
+      for (const i of idx) {
+        if (i.name && i.name.includes("size_1") && i.name.includes("color_1")) {
+          await variantsColl.dropIndex(i.name);
+        }
+      }
+    } catch (err) {
+      summary.errors.push(`drop legacy index: ${err.message}`);
+    }
+
+    return res.status(200).json({ message: "Migration complete.", ...summary });
+  } catch (error) {
+    console.error("Variant migration error:", error);
+    return res.status(500).json({
+      message: "Variant migration failed",
+      error: error.message,
+      partial: summary,
+    });
   }
 };

@@ -21,6 +21,18 @@ import {
   getTopSellingProducts,
   getMonthlyUsers,
   getSalesByCategory,
+  getUsersByLocation,
+  getHomeSections,
+  updateHomeSection,
+  listAdmins,
+  createAdmin,
+  deleteAdmin,
+  myAdminStatus,
+  listCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  migrateVariantAttributes,
 } from "../controllers/admin.controller.js";
 import { uploadProductImagesMulter } from "../middlewares/multerProductImages.middleware.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js";
@@ -51,6 +63,11 @@ router.get("/admin/dashboard/overview", getDashboardOverview);
 router.get("/admin/dashboard/top-products", getTopSellingProducts);
 router.get("/admin/dashboard/monthly-users", getMonthlyUsers);
 router.get("/admin/dashboard/sales-by-category", getSalesByCategory);
+router.get("/admin/dashboard/users-by-location", getUsersByLocation);
+
+// ─── Home sections (admin-curated featured + new arrivals) ───
+router.get("/admin/home-sections", getHomeSections);
+router.put("/admin/home-sections/:section", updateHomeSection);
 router.get("/admin/dashboard/monthly-revenue", getMonthlyOrderTotals);
 
 router.put(
@@ -111,6 +128,23 @@ router.get("/admin/users", getAllUsersLatest);
 router.post("/admin/delivery-rates/governorates", createGovOrderRate);
 router.put("/admin/delivery-rates/governorates/:id", updateGovOrderRate);
 router.delete("/admin/delivery-rates/governorates/:id", deleteGovOrderRate);
+
+// ─── Admin allowlist management ───
+router.get("/admin/admins", listAdmins);
+router.post("/admin/admins", createAdmin);
+router.delete("/admin/admins/:id", deleteAdmin);
+
+// ─── Per-user admin status (authenticated, non-admin path) ───
+router.get("/me/admin-status", myAdminStatus);
+
+// ─── Product category management ───
+router.get("/admin/categories", listCategories);
+router.post("/admin/categories", createCategory);
+router.put("/admin/categories/:id", updateCategory);
+router.delete("/admin/categories/:id", deleteCategory);
+
+// ─── One-shot data migration (idempotent) ───
+router.post("/admin/maintenance/migrate-variant-attributes", migrateVariantAttributes);
 
 router.post("/admin/jobs/birthday-reminder", async (req, res) => {
   try {

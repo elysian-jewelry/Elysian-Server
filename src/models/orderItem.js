@@ -1,4 +1,9 @@
 // models/OrderItem.js
+//
+// An immutable line on a placed order. The `attributes` field is a snapshot
+// of the variant's options at the time of checkout — important because
+// orders must keep displaying the original variant even if the product is
+// later renamed, deleted, or its attribute keys are changed.
 
 import mongoose from "mongoose";
 
@@ -19,13 +24,15 @@ const orderItemSchema = new mongoose.Schema(
       ref: "ProductVariant",
       default: null,
     },
-    size: {
-      type: String,
-      default: null,
-    },
-    color: {
-      type: String,
-      default: null,
+    // Snapshot fields for resilience against product/variant deletion.
+    product_name: { type: String, default: null },
+    product_type: { type: String, default: null },
+    product_image_url: { type: String, default: null },
+    // Snapshot of the variant's attribute values at order time.
+    attributes: {
+      type: Map,
+      of: String,
+      default: () => new Map(),
     },
     quantity: {
       type: Number,

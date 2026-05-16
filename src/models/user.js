@@ -13,6 +13,21 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    country: {
+      type: String,
+      default: "Unknown",
+      index: true,
+    },
+    governorate: {
+      type: String,
+      default: "Unknown",
+      index: true,
+    },
+    city: {
+      type: String,
+      default: "Unknown",
+      index: true,
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },

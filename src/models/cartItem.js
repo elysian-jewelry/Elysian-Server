@@ -1,4 +1,10 @@
 // models/CartItem.js
+//
+// A line in a user's cart. When it references a `variant_id`, the chosen
+// option values are snapshotted into `attributes` so the cart UI can
+// display them without an extra join, and so a later rename of the
+// underlying variant attribute doesn't silently rewrite what the user
+// is looking at.
 
 import mongoose from "mongoose";
 
@@ -19,13 +25,11 @@ const cartItemSchema = new mongoose.Schema(
       ref: "ProductVariant",
       default: null,
     },
-    size: {
-      type: String,
-      default: null,
-    },
-     color: {
-      type: String,
-      default: null,
+    // Snapshot of variant attributes at the moment the item was added.
+    attributes: {
+      type: Map,
+      of: String,
+      default: () => new Map(),
     },
     quantity: {
       type: Number,
