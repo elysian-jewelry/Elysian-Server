@@ -102,26 +102,43 @@ function normalizeRemoveImageIds(value) {
 
 async function resyncProductImagePrimaryAndRefs(productId) {
   const imgs = await ProductImage.find({ product_id: productId })
-    .sort({ created_at: 1 })
+    .sort({ sort_order: 1, created_at: 1 })
     .lean();
   if (!imgs.length) {
     await Product.findByIdAndUpdate(productId, { $set: { images: [] } });
     return;
   }
-  const urls = imgs.map((i) => String(i.image_url || "").trim());
-  const primaryIdx = primaryImageIndexFromUrls(urls);
+  // If no image is marked primary, pick first by sort order
+  const hasPrimary = imgs.some((i) => i.is_primary);
+  if (!hasPrimary) {
+    await ProductImage.updateOne(
+      { _id: imgs[0]._id },
+      { $set: { is_primary: true } }
+    );
+  }
+  // Ensure sort_order is sequential
   await Promise.all(
     imgs.map((img, idx) =>
       ProductImage.updateOne(
         { _id: img._id },
-        { $set: { is_primary: idx === primaryIdx } }
+        { $set: { sort_order: idx } }
       )
     )
   );
+  // Store refs in the correct order
   await Product.findByIdAndUpdate(productId, {
     $set: { images: imgs.map((i) => i._id) },
   });
 }
+
+/** Validate title-case: every word must start with uppercase. */
+const isTitleCase = (str) => {
+  if (!str || !str.trim()) return false;
+  // Ignore content inside parentheses for validation
+  const outside = str.trim().replace(/\([^)]*\)/g, "");
+  const words = outside.split(/\s+/).filter(Boolean);
+  return words.every((w) => w[0] === w[0].toUpperCase());
+};
 
 function parsePositiveInt(value, fieldLabel) {
   const n = Number(value);
@@ -668,7 +685,7 @@ const HOME_SECTION_KEYS = ["featured", "new_arrivals"];
 const populateHomeProducts = async (ids) => {
   if (!Array.isArray(ids) || ids.length === 0) return [];
   const products = await Product.find({ _id: { $in: ids } })
-    .populate({ path: "images", select: "image_url is_primary" })
+    .populate({ path: "images", select: "image_url is_primary sort_order" })
     .select("_id name type price stock_quantity images");
   const byId = new Map(products.map((p) => [String(p._id), p]));
   return ids
@@ -700,7 +717,7 @@ export const getHomeSections = async (req, res) => {
       populateHomeProducts(featuredIds),
       populateHomeProducts(newArrivalsIds),
       Product.find({})
-        .populate({ path: "images", select: "image_url is_primary" })
+        .populate({ path: "images", select: "image_url is_primary sort_order" })
         .select("_id name type price stock_quantity images sort_order")
         .sort({ type: 1, sort_order: 1, name: 1 })
         .lean(),
@@ -1273,10 +1290,14 @@ export const addProductsWithVariants = async (req, res) => {
 
     if (Array.isArray(p.image_urls) && p.image_urls.length > 0) {
       const urls = p.image_urls.map((s) => s.trim());
-      const toInsert = urls.map((image_url, i) => ({
+      // Determine admin-specified order and primary
+      const imageOrder = Array.isArray(p.image_order) ? p.image_order : urls.map((_, i) => i);
+      const primaryIdx = typeof p.primary_image_index === "number" ? p.primary_image_index : 0;
+      const toInsert = imageOrder.map((origIdx, sortPos) => ({
         product_id: product._id,
-        image_url,
-        is_primary: i === 0,
+        image_url: urls[origIdx] ?? urls[sortPos],
+        is_primary: origIdx === primaryIdx,
+        sort_order: sortPos,
       }));
       const createdImgs = await ProductImage.insertMany(toInsert, {
         ordered: true,
@@ -1437,6 +1458,8 @@ export const updateProduct = async (req, res) => {
   }
 
   const removeIds = normalizeRemoveImageIds(body.remove_image_ids);
+  const primaryImageId = body.primary_image_id || null;
+  const imageOrder = Array.isArray(body.image_order) ? body.image_order : null;
 
   if (typeof body.add_variants === "string" && body.add_variants.trim() !== "") {
     try {
@@ -1793,6 +1816,51 @@ export const updateProduct = async (req, res) => {
 
     if (removeIds.length > 0 || uploadedFiles.length > 0) {
       await resyncProductImagePrimaryAndRefs(productDoc._id);
+    }
+
+    // 5️⃣ Handle primary image change and/or reorder (can happen independently of add/remove)
+    if (primaryImageId || imageOrder) {
+      const allImgs = await ProductImage.find({ product_id: productDoc._id })
+        .sort({ sort_order: 1, created_at: 1 })
+        .lean();
+
+      if (primaryImageId) {
+        const validPrimary = allImgs.some((img) => String(img._id) === String(primaryImageId));
+        if (validPrimary) {
+          await ProductImage.updateMany(
+            { product_id: productDoc._id },
+            { $set: { is_primary: false } }
+          );
+          await ProductImage.updateOne(
+            { _id: primaryImageId, product_id: productDoc._id },
+            { $set: { is_primary: true } }
+          );
+        }
+      }
+
+      if (imageOrder && Array.isArray(imageOrder) && imageOrder.length > 0) {
+        // imageOrder is an array of image _id strings in the desired display order
+        const validIds = new Set(allImgs.map((img) => String(img._id)));
+        const cleanOrder = imageOrder.filter((id) => validIds.has(String(id)));
+        if (cleanOrder.length > 0) {
+          await Promise.all(
+            cleanOrder.map((imgId, idx) =>
+              ProductImage.updateOne(
+                { _id: imgId, product_id: productDoc._id },
+                { $set: { sort_order: idx } }
+              )
+            )
+          );
+          // Update product.images ref array to match new order
+          const orderedImgs = await ProductImage.find({ product_id: productDoc._id })
+            .sort({ sort_order: 1 })
+            .select("_id")
+            .lean();
+          await Product.findByIdAndUpdate(productDoc._id, {
+            $set: { images: orderedImgs.map((i) => i._id) },
+          });
+        }
+      }
     }
 
     const productOut = await Product.findById(productDoc._id);
@@ -2595,6 +2663,11 @@ const validateVariantAttributes = (attributes, optionType) => {
   }
   if (!attributes[optionType]) {
     return `Variant must have a value for '${optionType}'.`;
+  }
+  // Validate title-case: every word starts with uppercase
+  const val = attributes[optionType];
+  if (!isTitleCase(val)) {
+    return `Variant value "${val}" must have every word capitalized (e.g. "Rose Gold", not "rose gold").`;
   }
   return null;
 };

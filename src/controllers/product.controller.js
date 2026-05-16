@@ -25,7 +25,7 @@ const VARIANT_SELECT = "_id attributes price stock_quantity description";
 const hydrateProductIds = async (ids) => {
   if (!Array.isArray(ids) || ids.length === 0) return [];
   const products = await Product.find({ _id: { $in: ids } })
-    .populate({ path: "images", select: "image_url is_primary", options: { limit: 5 } })
+    .populate({ path: "images", select: "image_url is_primary sort_order", options: { sort: { sort_order: 1 }, limit: 5 } })
     .populate({ path: "product_variants", select: VARIANT_SELECT });
 
   const byId = new Map(products.map((p) => [String(p._id), p]));
@@ -77,7 +77,7 @@ export const getProductsByType = async (req, res) => {
       });
     }
 
-    const populateImages = { path: "images", select: "image_url is_primary", options: { limit: 5 } };
+    const populateImages = { path: "images", select: "image_url is_primary sort_order", options: { sort: { sort_order: 1 }, limit: 5 } };
     const populateVariants = { path: "product_variants", select: VARIANT_SELECT };
 
     const ordered = await Product.find({ type, sort_order: { $gt: 0 } })
@@ -105,9 +105,14 @@ const formatProductResponse = (productsRaw) => {
         ? product.toObject()
         : { ...product };
 
-    // Sort images so primary image comes first
+    // Sort images by admin-defined sort_order, primary first as tiebreaker
     if (plain.images && plain.images.length > 0) {
-      plain.images.sort((a, b) => b.is_primary - a.is_primary);
+      plain.images.sort((a, b) => {
+        const orderA = typeof a.sort_order === "number" ? a.sort_order : 999;
+        const orderB = typeof b.sort_order === "number" ? b.sort_order : 999;
+        if (orderA !== orderB) return orderA - orderB;
+        return (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0);
+      });
     }
 
     const variants = plain.product_variants?.length
