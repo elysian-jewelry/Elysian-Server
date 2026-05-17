@@ -34,6 +34,12 @@ const orderItemSchema = new mongoose.Schema(
       of: String,
       default: () => new Map(),
     },
+    // Optional free-text note (e.g. custom size for Hand Chains).
+    notes: {
+      type: String,
+      default: null,
+      maxlength: 500,
+    },
     quantity: {
       type: Number,
       required: true,

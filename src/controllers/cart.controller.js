@@ -12,7 +12,8 @@ const attrsToObject = (m) => {
 
 export const addItemToCart = async (req, res) => {
   try {
-    const { product_id, variant_id, quantity } = req.body;
+    const { product_id, variant_id, quantity, notes } = req.body;
+    const sanitizedNotes = typeof notes === "string" && notes.trim() ? notes.trim().slice(0, 500) : null;
     const user_id = req.user.user_id;
 
     if (!product_id || !quantity || quantity <= 0) {
@@ -77,6 +78,7 @@ export const addItemToCart = async (req, res) => {
           // Snapshot the variant attributes so cart display works without a join.
           attributes: attrsToObject(variant.attributes),
           quantity,
+          notes: sanitizedNotes,
         });
         cart.items.push(newCartItem._id);
       }
@@ -113,6 +115,7 @@ export const addItemToCart = async (req, res) => {
           product_id,
           variant_id: null,
           quantity,
+          notes: sanitizedNotes,
         });
         cart.items.push(newCartItem._id);
       }
@@ -333,6 +336,7 @@ export const getUserCart = async (req, res) => {
           variant_id: variant ? variant._id : null,
           attributes,
           variant_description: variant?.description || "",
+          notes: item.notes || null,
           price: parseFloat(variant?.price || product.price || 0).toFixed(2),
           product_id: product._id,
           product_name: product.name || null,

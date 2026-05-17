@@ -37,6 +37,12 @@ const cartItemSchema = new mongoose.Schema(
       min: 1,
       default: 1,
     },
+    // Optional free-text note (e.g. custom size for Hand Chains).
+    notes: {
+      type: String,
+      default: null,
+      maxlength: 500,
+    },
   },
   {
     collection: "cart_items",

@@ -222,6 +222,7 @@ export const checkout = async (req, res) => {
         product_type: item.product_id.type || null,
         product_image_url: imageByProduct.get(String(item.product_id._id)) || null,
         attributes,
+        notes: item.notes || null,
         quantity: item.quantity,
         price: item.variant_id?.price || item.product_id.price,
       };
@@ -428,6 +429,7 @@ export const getUserOrders = async (req, res) => {
         quantity: item.quantity,
         price: parseFloat(item.price),
         attributes,
+        notes: item.notes || null,
         image_url:
           item.product_image_url ||
           item.product_id?.images?.[0]?.image_url ||
