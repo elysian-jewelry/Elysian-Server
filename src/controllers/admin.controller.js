@@ -1623,6 +1623,8 @@ export const updateProduct = async (req, res) => {
         if (!cleanAttrs) {
           return res.status(400).json({ message: "new_attributes must be an object." });
         }
+
+        
         const attrErr = validateVariantAttributes(cleanAttrs, product.option_type);
         if (attrErr) return res.status(400).json({ message: attrErr });
         variantDoc.attributes = new Map(Object.entries(cleanAttrs));
