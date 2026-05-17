@@ -100,32 +100,14 @@ function normalizeRemoveImageIds(value) {
   return [];
 }
 
-async function resyncProductImagePrimaryAndRefs(productId) {
+/**
+ * After add/remove of images, re-read and update product.images refs in sort_order.
+ */
+async function resyncProductImageRefs(productId) {
   const imgs = await ProductImage.find({ product_id: productId })
-    .sort({ sort_order: 1, created_at: 1 })
+    .sort({ sort_order: 1 })
+    .select("_id")
     .lean();
-  if (!imgs.length) {
-    await Product.findByIdAndUpdate(productId, { $set: { images: [] } });
-    return;
-  }
-  // If no image is marked primary, pick first by sort order
-  const hasPrimary = imgs.some((i) => i.is_primary);
-  if (!hasPrimary) {
-    await ProductImage.updateOne(
-      { _id: imgs[0]._id },
-      { $set: { is_primary: true } }
-    );
-  }
-  // Ensure sort_order is sequential
-  await Promise.all(
-    imgs.map((img, idx) =>
-      ProductImage.updateOne(
-        { _id: img._id },
-        { $set: { sort_order: idx } }
-      )
-    )
-  );
-  // Store refs in the correct order
   await Product.findByIdAndUpdate(productId, {
     $set: { images: imgs.map((i) => i._id) },
   });
@@ -134,7 +116,6 @@ async function resyncProductImagePrimaryAndRefs(productId) {
 /** Validate title-case: every word must start with uppercase. */
 const isTitleCase = (str) => {
   if (!str || !str.trim()) return false;
-  // Ignore content inside parentheses for validation
   const outside = str.trim().replace(/\([^)]*\)/g, "");
   const words = outside.split(/\s+/).filter(Boolean);
   return words.every((w) => w[0] === w[0].toUpperCase());
@@ -1289,15 +1270,15 @@ export const addProductsWithVariants = async (req, res) => {
     }
 
     if (Array.isArray(p.image_urls) && p.image_urls.length > 0) {
-      const urls = p.image_urls.map((s) => s.trim());
-      // Determine admin-specified order and primary
-      const imageOrder = Array.isArray(p.image_order) ? p.image_order : urls.map((_, i) => i);
-      const primaryIdx = typeof p.primary_image_index === "number" ? p.primary_image_index : 0;
-      const toInsert = imageOrder.map((origIdx, sortPos) => ({
+      if (p.image_urls.length > 5) {
+        return res.status(400).json({ message: "A product can have at most 5 images." });
+      }
+      // Images are already in admin-chosen order. First = primary.
+      const toInsert = p.image_urls.map((url, idx) => ({
         product_id: product._id,
-        image_url: urls[origIdx] ?? urls[sortPos],
-        is_primary: origIdx === primaryIdx,
-        sort_order: sortPos,
+        image_url: url.trim(),
+        is_primary: idx === 0,
+        sort_order: idx,
       }));
       const createdImgs = await ProductImage.insertMany(toInsert, {
         ordered: true,
@@ -1458,7 +1439,6 @@ export const updateProduct = async (req, res) => {
   }
 
   const removeIds = normalizeRemoveImageIds(body.remove_image_ids);
-  const primaryImageId = body.primary_image_id || null;
   const imageOrder = Array.isArray(body.image_order) ? body.image_order : null;
 
   if (typeof body.add_variants === "string" && body.add_variants.trim() !== "") {
@@ -1787,6 +1767,11 @@ export const updateProduct = async (req, res) => {
             "The product must keep at least one image. Upload new image(s) before removing the last one(s), or remove fewer images.",
         });
       }
+      if (finalCount > 5) {
+        return res.status(400).json({
+          message: "A product can have at most 5 images.",
+        });
+      }
     }
 
     if (toRemoveList.length > 0) {
@@ -1797,6 +1782,11 @@ export const updateProduct = async (req, res) => {
     }
 
     if (uploadedFiles.length > 0) {
+      // Find current max sort_order so new images go at the end
+      const maxImg = await ProductImage.findOne({ product_id: productDoc._id })
+        .sort({ sort_order: -1 }).select("sort_order").lean();
+      let nextOrder = (maxImg?.sort_order ?? -1) + 1;
+
       const newDocs = [];
       for (const file of uploadedFiles) {
         const image_url = await uploadImageBufferToGcs(
@@ -1810,6 +1800,7 @@ export const updateProduct = async (req, res) => {
           product_id: productDoc._id,
           image_url,
           is_primary: false,
+          sort_order: nextOrder++,
         });
       }
       await ProductImage.insertMany(newDocs, { ordered: true });
@@ -1817,51 +1808,27 @@ export const updateProduct = async (req, res) => {
     }
 
     if (removeIds.length > 0 || uploadedFiles.length > 0) {
-      await resyncProductImagePrimaryAndRefs(productDoc._id);
+      await resyncProductImageRefs(productDoc._id);
     }
 
-    // 5️⃣ Handle primary image change and/or reorder (can happen independently of add/remove)
-    if (primaryImageId || imageOrder) {
-      const allImgs = await ProductImage.find({ product_id: productDoc._id })
-        .sort({ sort_order: 1, created_at: 1 })
-        .lean();
-
-      if (primaryImageId) {
-        const validPrimary = allImgs.some((img) => String(img._id) === String(primaryImageId));
-        if (validPrimary) {
-          await ProductImage.updateMany(
-            { product_id: productDoc._id },
-            { $set: { is_primary: false } }
-          );
-          await ProductImage.updateOne(
-            { _id: primaryImageId, product_id: productDoc._id },
-            { $set: { is_primary: true } }
-          );
-        }
-      }
-
-      if (imageOrder && Array.isArray(imageOrder) && imageOrder.length > 0) {
-        // imageOrder is an array of image _id strings in the desired display order
-        const validIds = new Set(allImgs.map((img) => String(img._id)));
-        const cleanOrder = imageOrder.filter((id) => validIds.has(String(id)));
-        if (cleanOrder.length > 0) {
-          await Promise.all(
-            cleanOrder.map((imgId, idx) =>
-              ProductImage.updateOne(
-                { _id: imgId, product_id: productDoc._id },
-                { $set: { sort_order: idx } }
-              )
+    // 5️⃣ Apply admin-defined image order. image_order = array of image _ids in display order.
+    //    First element = primary. Simple: store sort_order = index, is_primary = (index === 0).
+    if (Array.isArray(imageOrder) && imageOrder.length > 0) {
+      const allImgs = await ProductImage.find({ product_id: productDoc._id }).select("_id").lean();
+      const validIds = new Set(allImgs.map((img) => String(img._id)));
+      const cleanOrder = imageOrder.filter((id) => validIds.has(String(id)));
+      if (cleanOrder.length > 0) {
+        await Promise.all(
+          cleanOrder.map((imgId, idx) =>
+            ProductImage.updateOne(
+              { _id: imgId, product_id: productDoc._id },
+              { $set: { sort_order: idx, is_primary: idx === 0 } }
             )
-          );
-          // Update product.images ref array to match new order
-          const orderedImgs = await ProductImage.find({ product_id: productDoc._id })
-            .sort({ sort_order: 1 })
-            .select("_id")
-            .lean();
-          await Product.findByIdAndUpdate(productDoc._id, {
-            $set: { images: orderedImgs.map((i) => i._id) },
-          });
-        }
+          )
+        );
+        await Product.findByIdAndUpdate(productDoc._id, {
+          $set: { images: cleanOrder.map((id) => new mongoose.Types.ObjectId(id)) },
+        });
       }
     }
 
