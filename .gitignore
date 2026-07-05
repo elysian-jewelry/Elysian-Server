@@ -7,6 +7,15 @@ package-lock.json
 
 # Environment files (DO NOT COMMIT SECRETS)
 .env
+.env.*
+!.env.example
+
+# Temporary local secrets file — delete after migrating to Secret Manager
+env_variables.yaml
+env_variables.example.yaml
+
+# One-time secret migration helper (contains no secrets, but not needed in repo)
+create-secrets.sh
 
 # Google Cloud / service account credentials
 credentials-elysian-api.json
