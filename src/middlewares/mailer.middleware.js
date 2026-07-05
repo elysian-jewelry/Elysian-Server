@@ -164,7 +164,7 @@ const summaryHtml = `
       </h2>
       <p style="font-size: 15px; margin: 0 0 6px; color: #111;">
         <strong>Order ID:</strong>
-        <span style="font-family: 'Courier New', monospace; color: #ff4d88; letter-spacing: 1px;">${order?._id ?? ''}</span>
+        <span style="font-family: 'Courier New', monospace; color: #ff4d88; letter-spacing: 1px;">#${order?._id ? String(order._id).slice(-6).toUpperCase() : ''}</span>
       </p>
       <p style="font-size: 15px; margin-bottom: 20px; color: #111;">
         Here is your detailed receipt:
