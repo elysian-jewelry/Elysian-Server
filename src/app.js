@@ -29,13 +29,8 @@ class App {
   }
 
   // Middleware setup
-    initializeMiddlewares() {
-    this.app.use(
-      cors({
-        origin: ["https://elysian-jewelry.com", "https://www.elysian-jewelry.com"],
-        credentials: true,
-      })
-    );
+  initializeMiddlewares() {
+    this.app.use(cors());
     this.app.use(express.json());
     this.app.use(
       "/images",
