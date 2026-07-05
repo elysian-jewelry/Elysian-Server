@@ -162,6 +162,10 @@ const summaryHtml = `
       <h2 style="color: #111; font-weight: 600;">
         Thank you for your order, <span style="color: #ff4d88;">${first_name + ' ' + last_name || 'Valued Customer'}</span>!💗
       </h2>
+      <p style="font-size: 15px; margin: 0 0 6px; color: #111;">
+        <strong>Order ID:</strong>
+        <span style="font-family: 'Courier New', monospace; color: #ff4d88; letter-spacing: 1px;">${order?._id ?? ''}</span>
+      </p>
       <p style="font-size: 15px; margin-bottom: 20px; color: #111;">
         Here is your detailed receipt:
       </p>

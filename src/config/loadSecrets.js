@@ -1,7 +1,7 @@
 import { SecretManagerServiceClient } from "@google-cloud/secret-manager";
 
-// Every secret the app needs at runtime. Names must match the secret
-// names created in Google Secret Manager (see create-secrets.sh).
+// Every secret the app needs at runtime. Each name must exactly match
+// a secret created in Google Secret Manager.
 const SECRET_NAMES = [
   "JWT_SECRET",
   "EMAIL_USER",
