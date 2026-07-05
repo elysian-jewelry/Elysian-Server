@@ -23,4 +23,10 @@ const startServer = async () => {
   birthdayPromoCron(); // ✅ Cron can run now
 };
 
-startServer();
+startServer().catch((err) => {
+  // A startup failure (e.g. a secret that can't be read) would otherwise
+  // surface as an opaque unhandled rejection. Log it clearly so it shows
+  // up in `gcloud app logs`, then exit so App Engine restarts the instance.
+  console.error("❌ Fatal startup error:", err);
+  process.exit(1);
+});

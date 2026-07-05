@@ -37,10 +37,18 @@ export const loadSecrets = async () => {
   const client = new SecretManagerServiceClient();
 
   const accessSecret = async (name) => {
-    const [version] = await client.accessSecretVersion({
-      name: `projects/${projectId}/secrets/${name}/versions/latest`,
-    });
-    return version.payload.data.toString("utf8");
+    try {
+      const [version] = await client.accessSecretVersion({
+        name: `projects/${projectId}/secrets/${name}/versions/latest`,
+      });
+      return version.payload.data.toString("utf8");
+    } catch (err) {
+      // Make the failing secret obvious in the logs (permission denied,
+      // secret not found, etc.) instead of a generic startup crash.
+      throw new Error(
+        `Failed to load secret "${name}" from project "${projectId}": ${err.message}`
+      );
+    }
   };
 
   await Promise.all(
