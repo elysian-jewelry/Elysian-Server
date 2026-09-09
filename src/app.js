@@ -18,7 +18,6 @@ import { connectToMongoDB } from "./config/mongodb.js";
 dotenv.config();
 
 
-
 /**
  * Build the CORS allowlist from ALLOWED_ORIGINS ("a,b,c").
  *
