@@ -362,6 +362,29 @@ export const checkout = async (req, res) => {
 };
 
 /**
+ * A cell value that a spreadsheet must never read as a formula.
+ *
+ * `valueInputOption: "RAW"` already stops Sheets parsing anything, so this is
+ * defence in depth for the day someone flips that option back to
+ * USER_ENTERED. Leading "=", "@", tab and CR are always escaped with the
+ * plain-text apostrophe; "+" and "-" only when what follows is not a plain
+ * number, so Egyptian phone numbers (+201234567890) and negative amounts stay
+ * readable in the operations sheet instead of picking up a literal apostrophe
+ * on every single order row.
+ */
+const FORMULA_LEAD = /^[=@\t\r\n]/;
+const PLAIN_NUMBER = /^[+-]\d[\d\s.,]*$/;
+
+const sanitizeCell = (v) => {
+  const s = v == null ? "" : String(v);
+  if (FORMULA_LEAD.test(s)) return `'${s}`;
+  if ((s.startsWith("+") || s.startsWith("-")) && !PLAIN_NUMBER.test(s)) {
+    return `'${s}`;
+  }
+  return s;
+};
+
+/**
  * Internal helper — NOT an Express handler and not exported.
  *
  * It was previously registered as `router.post("/update/google-sheet", ...)`,
@@ -388,12 +411,16 @@ const updateGoogleSheet = async (sheetData) => {
     const spreadsheetId = process.env.GOOGLE_SPREAD_SHEET_ID; // from .env file
     const range = "Sheet1!A2:N"; // Adjust the range to start from row 2 downwards
 
-    const resource = { values: sheetData };
+    // Every cell is customer-controlled text (name, address, notes), so the
+    // sheet must not interpret any of it. RAW stores values verbatim;
+    // USER_ENTERED parsed them, which let an order turn into a live
+    // =IMPORTXML(...) in the operations sheet the moment staff opened it.
+    const resource = { values: sheetData.map((row) => row.map(sanitizeCell)) };
 
     const response = await sheets.spreadsheets.values.append({
       spreadsheetId,
       range,
-      valueInputOption: "USER_ENTERED",
+      valueInputOption: "RAW",
       resource,
     });
 

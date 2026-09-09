@@ -9,8 +9,40 @@ import { resolveRequestLocation } from "../utils/geo.js";
 const verificationStore = new Map(); // email -> { code, createdAt, attempts }
 
 // A code survives 5 minutes or 5 wrong guesses, whichever comes first.
-const CODE_TTL_MINUTES = 5;
+const TTL_MS = 5 * 60_000;
 const MAX_VERIFICATION_ATTEMPTS = 5;
+
+// Hard ceiling on pending codes. The store is keyed by whatever address the
+// caller supplies, and /auth/login accepts arbitrary addresses, so without a
+// cap an attacker can insert unbounded distinct keys until the instance is
+// OOM-killed. 10k entries is far above any real concurrent-login volume for
+// this store and costs well under a megabyte.
+const MAX_PENDING = 10_000;
+
+/**
+ * Drop every entry past its TTL. Expiry used to be checked only on read, so an
+ * address that was never verified stayed resident for the life of the process.
+ *
+ * Deleting while iterating a Map is well defined: entries removed before the
+ * iterator reaches them are simply never visited.
+ *
+ * @returns {number} how many entries were reclaimed
+ */
+const sweepExpired = () => {
+  const cutoff = Date.now() - TTL_MS;
+  let removed = 0;
+  for (const [k, v] of verificationStore) {
+    if (new Date(v.createdAt).getTime() < cutoff) {
+      verificationStore.delete(k);
+      removed += 1;
+    }
+  }
+  return removed;
+};
+
+// .unref() keeps this timer from holding the event loop open, so the sweeper
+// never delays process shutdown on an App Engine instance teardown.
+setInterval(sweepExpired, 60_000).unref();
 
 /**
  * Six-digit login code.
@@ -70,6 +102,18 @@ export const login = async (req, res) => {
     const { email } = req.body;
     const key = storeKey(email);
 
+    // Only a NEW key grows the map — someone re-requesting a code for an
+    // address that is already pending must not be turned away. Sweep first so
+    // a store full of expired entries never produces a spurious 503.
+    if (!verificationStore.has(key) && verificationStore.size >= MAX_PENDING) {
+      sweepExpired();
+      if (verificationStore.size >= MAX_PENDING) {
+        return res
+          .status(503)
+          .json({ message: "Service busy. Please try again shortly." });
+      }
+    }
+
     const verificationCode = generateVerificationCode();
     const createdAt = new Date();
 
@@ -104,10 +148,9 @@ export const verifyCodeAndLogin = async (req, res) => {
       return res.status(400).json({ message: 'No verification code found for this email.' });
     }
 
-    const now = new Date();
-    const diffMinutes = (now - new Date(stored.createdAt)) / (1000 * 60);
+    const age = Date.now() - new Date(stored.createdAt).getTime();
 
-    if (diffMinutes > CODE_TTL_MINUTES) {
+    if (age > TTL_MS) {
       verificationStore.delete(key);
       return res.status(400).json({ message: 'Verification code expired. Please request a new one.' });
     }
