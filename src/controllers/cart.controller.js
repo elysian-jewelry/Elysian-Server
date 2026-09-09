@@ -2,6 +2,7 @@ import Cart from "../models/cart.js";
 import CartItem from "../models/cartItem.js";
 import Product from "../models/product.js";
 import ProductVariant from "../models/productVariant.js";
+import { MAX_CART_ITEM_QUANTITY } from "../validation/cart.validation.js";
 
 // Convert a Mongoose Map (or plain object) into a serializable plain object.
 const attrsToObject = (m) => {
@@ -16,7 +17,20 @@ export const addItemToCart = async (req, res, next) => {
     const sanitizedNotes = typeof notes === "string" && notes.trim() ? notes.trim().slice(0, 500) : null;
     const user_id = req.user.user_id;
 
-    if (!product_id || !quantity || quantity <= 0) {
+    // The old guard was `!quantity || quantity <= 0`, which a JSON string
+    // passes ("5" <= 0 is false). The raw value then reached
+    // `existingItem.quantity + quantity`, where + is string concatenation:
+    // adding "5" to an existing 5 produced "55", not 10 — and the stock
+    // comparison coerced it back to a number, so a product with 60 in stock
+    // accepted it. A float such as 1.5 got through too. Cast once here, and
+    // use `qty` (never the raw body value) from this point on.
+    const qty = Number(quantity);
+    if (
+      !product_id ||
+      !Number.isInteger(qty) ||
+      qty < 1 ||
+      qty > MAX_CART_ITEM_QUANTITY
+    ) {
       return res.status(400).json({ message: "Invalid product or quantity" });
     }
 
@@ -57,9 +71,7 @@ export const addItemToCart = async (req, res, next) => {
         variant_id,
       });
 
-      const totalQty = existingItem
-        ? existingItem.quantity + quantity
-        : quantity;
+      const totalQty = existingItem ? existingItem.quantity + qty : qty;
       if (variant.stock_quantity < totalQty) {
         return res
           .status(400)
@@ -77,7 +89,7 @@ export const addItemToCart = async (req, res, next) => {
           variant_id,
           // Snapshot the variant attributes so cart display works without a join.
           attributes: attrsToObject(variant.attributes),
-          quantity,
+          quantity: qty,
           notes: sanitizedNotes,
         });
         cart.items.push(newCartItem._id);
@@ -95,9 +107,7 @@ export const addItemToCart = async (req, res, next) => {
         variant_id: null,
       });
 
-      const totalQty = existingItem
-        ? existingItem.quantity + quantity
-        : quantity;
+      const totalQty = existingItem ? existingItem.quantity + qty : qty;
 
       if (product.stock_quantity < totalQty) {
         return res
@@ -114,7 +124,7 @@ export const addItemToCart = async (req, res, next) => {
           cart_id: cart._id,
           product_id,
           variant_id: null,
-          quantity,
+          quantity: qty,
           notes: sanitizedNotes,
         });
         cart.items.push(newCartItem._id);
@@ -191,6 +201,14 @@ export const incrementCartItem = async (req, res, next) => {
       return res.status(403).json({ message: "Unauthorized" });
 
     const quantityAfterIncrement = item.quantity + 1;
+
+    // Without this the /cart/add ceiling is trivially bypassed by repeating
+    // the increment call.
+    if (quantityAfterIncrement > MAX_CART_ITEM_QUANTITY) {
+      return res.status(400).json({
+        message: `Quantity must not exceed ${MAX_CART_ITEM_QUANTITY}`,
+      });
+    }
 
     if (item.variant_id) {
       if (item.variant_id.stock_quantity < quantityAfterIncrement) {
