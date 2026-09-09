@@ -1,7 +1,7 @@
 import express from "express";
 import { getAllProducts, getProductsByType, getFeaturedProducts, getNewArrivalProducts, getCategories } from "../controllers/product.controller.js";
 
-const router = express.Router();
+const router = express.Router({ caseSensitive: true, strict: false });
 
 router.get("/products/categories", getCategories);
 

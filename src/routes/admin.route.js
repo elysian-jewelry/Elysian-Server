@@ -27,48 +27,42 @@ import {
   listAdmins,
   createAdmin,
   deleteAdmin,
-  myAdminStatus,
   listCategories,
   updateCategory,
 } from "../controllers/admin.controller.js";
 import { uploadProductImagesMulter } from "../middlewares/multerProductImages.middleware.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js";
-import { trackVisit, getVisitStats } from "../controllers/visit.controller.js";
+import { getVisitStats } from "../controllers/visit.controller.js";
 
-const router = express.Router();
-
-// ─── Public visit tracking ───
-router.get("/track-visit", trackVisit);
+// Mounted at /admin behind requireAdmin (see routes/routes.js), so every path
+// below is relative and the public URLs are unchanged: "/users" here is
+// GET /admin/users on the wire. Nothing that is not admin-only belongs in
+// this file — putting it here is what grants it the admin gate.
+const router = express.Router({ caseSensitive: true, strict: false });
 
 // ─── Admin visit stats ───
-router.get("/admin/dashboard/visits", getVisitStats);
+router.get("/dashboard/visits", getVisitStats);
 
-router.delete("/admin/users/orders", deleteUserOrdersByEmail);
+router.delete("/users/orders", deleteUserOrdersByEmail);
 
-router.post(
-  "/admin/products/images/sync/local-folders",
-  syncFolderImagesToProducts
-);
+router.post("/products/images/sync/local-folders", syncFolderImagesToProducts);
 
-router.post(
-  "/admin/products/images/sync/cloud-storage",
-  syncLocalImagesToGcsAndMongo
-);
+router.post("/products/images/sync/cloud-storage", syncLocalImagesToGcsAndMongo);
 
 // ─── Dashboard ───
-router.get("/admin/dashboard/overview", getDashboardOverview);
-router.get("/admin/dashboard/top-products", getTopSellingProducts);
-router.get("/admin/dashboard/monthly-users", getMonthlyUsers);
-router.get("/admin/dashboard/sales-by-category", getSalesByCategory);
-router.get("/admin/dashboard/users-by-location", getUsersByLocation);
+router.get("/dashboard/overview", getDashboardOverview);
+router.get("/dashboard/top-products", getTopSellingProducts);
+router.get("/dashboard/monthly-users", getMonthlyUsers);
+router.get("/dashboard/sales-by-category", getSalesByCategory);
+router.get("/dashboard/users-by-location", getUsersByLocation);
 
 // ─── Home sections (admin-curated featured + new arrivals) ───
-router.get("/admin/home-sections", getHomeSections);
-router.put("/admin/home-sections/:section", updateHomeSection);
-router.get("/admin/dashboard/monthly-revenue", getMonthlyOrderTotals);
+router.get("/home-sections", getHomeSections);
+router.put("/home-sections/:section", updateHomeSection);
+router.get("/dashboard/monthly-revenue", getMonthlyOrderTotals);
 
 router.put(
-  "/admin/products",
+  "/products",
   (req, res, next) => {
     const ct = (req.headers["content-type"] || "").toLowerCase();
     if (ct.includes("multipart/form-data")) {
@@ -87,14 +81,14 @@ router.put(
   updateProduct
 );
 
-router.delete("/admin/products/variants", deleteVariant);
+router.delete("/products/variants", deleteVariant);
 
-router.put("/admin/products/sort-order", updateProductSortOrder);
+router.put("/products/sort-order", updateProductSortOrder);
 
-router.get("/admin/orders/users", getAllOrdersFull);
+router.get("/orders/users", getAllOrdersFull);
 
 router.post(
-  "/admin/products",
+  "/products",
   (req, res, next) => {
     const ct = (req.headers["content-type"] || "").toLowerCase();
     if (!ct.includes("multipart/form-data")) {
@@ -114,31 +108,28 @@ router.post(
   addProductsWithVariants
 );
 
-router.delete("/admin/products", deleteProductsByNameAndType);
+router.delete("/products", deleteProductsByNameAndType);
 
-router.get("/admin/promo-codes", getAllPromoCodes);
-router.post("/admin/promo-codes", createPublicPromo);
-router.delete("/admin/promo-codes/:id", deletePromoCodeById);
+router.get("/promo-codes", getAllPromoCodes);
+router.post("/promo-codes", createPublicPromo);
+router.delete("/promo-codes/:id", deletePromoCodeById);
 
-router.get("/admin/users", getAllUsersLatest);
+router.get("/users", getAllUsersLatest);
 
-router.post("/admin/delivery-rates/governorates", createGovOrderRate);
-router.put("/admin/delivery-rates/governorates/:id", updateGovOrderRate);
-router.delete("/admin/delivery-rates/governorates/:id", deleteGovOrderRate);
+router.post("/delivery-rates/governorates", createGovOrderRate);
+router.put("/delivery-rates/governorates/:id", updateGovOrderRate);
+router.delete("/delivery-rates/governorates/:id", deleteGovOrderRate);
 
 // ─── Admin allowlist management ───
-router.get("/admin/admins", listAdmins);
-router.post("/admin/admins", createAdmin);
-router.delete("/admin/admins/:id", deleteAdmin);
-
-// ─── Per-user admin status (authenticated, non-admin path) ───
-router.get("/me/admin-status", myAdminStatus);
+router.get("/admins", listAdmins);
+router.post("/admins", createAdmin);
+router.delete("/admins/:id", deleteAdmin);
 
 // ─── Product category management (reorder + toggle only; creation/deletion is automatic) ───
-router.get("/admin/categories", listCategories);
-router.put("/admin/categories/:id", updateCategory);
+router.get("/categories", listCategories);
+router.put("/categories/:id", updateCategory);
 
-router.post("/admin/jobs/birthday-reminder", async (req, res) => {
+router.post("/jobs/birthday-reminder", async (req, res) => {
   try {
     const result = await runMissingBirthdayReminder();
     res.json({ success: true, result });

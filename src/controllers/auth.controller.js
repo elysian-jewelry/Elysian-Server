@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import User from "../models/user.js";
 import { sendVerificationCodeEmail  } from "../middlewares/mailer.middleware.js"; // your custom mail sender
@@ -5,7 +6,50 @@ import { resolveRequestLocation } from "../utils/geo.js";
 
 
 // In-memory store (or use Redis in production)
-const verificationStore = new Map(); // email -> { code, full_name, hashedPassword }
+const verificationStore = new Map(); // email -> { code, createdAt, attempts }
+
+// A code survives 5 minutes or 5 wrong guesses, whichever comes first.
+const CODE_TTL_MINUTES = 5;
+const MAX_VERIFICATION_ATTEMPTS = 5;
+
+/**
+ * Six-digit login code.
+ *
+ * crypto.randomInt is rejection-sampled and unbiased, and draws from the
+ * CSPRNG. Math.random() — what this used before — is V8's xorshift128+, whose
+ * 128-bit state is recoverable from a run of outputs; because anyone can
+ * request codes for an address they own and read them out of their own inbox,
+ * that made every other user's next code predictable.
+ *
+ * padStart keeps the code six characters when the draw is below 100000, so
+ * the keyspace is the full 10^6 rather than the 900k the old expression gave.
+ */
+const generateVerificationCode = () =>
+  crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+
+/**
+ * Constant-time code comparison.
+ *
+ * timingSafeEqual throws unless both buffers are the same length, so the
+ * length is checked first — that leaks nothing, since the code length is
+ * fixed and public. What it protects is the byte-by-byte comparison, which
+ * with `!==` would return early on the first wrong digit and let an attacker
+ * recover the code one position at a time from response timing.
+ */
+const codesMatch = (expected, supplied) => {
+  if (typeof supplied !== "string") return false;
+  const a = Buffer.from(String(expected), "utf8");
+  const b = Buffer.from(supplied, "utf8");
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+};
+
+/**
+ * Store key for a pending code. Both endpoints normalise the same way so that
+ * "User@Example.com" at verification finds the entry stored for the address
+ * typed as "user@example.com" at login.
+ */
+const storeKey = (email) => String(email ?? "").trim().toLowerCase();
 
 
 const generateToken = (user) => {
@@ -24,12 +68,13 @@ const generateToken = (user) => {
 export const login = async (req, res) => {
   try {
     const { email } = req.body;
+    const key = storeKey(email);
 
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit code
+    const verificationCode = generateVerificationCode();
     const createdAt = new Date();
 
 
-    verificationStore.set(email, { code: verificationCode, createdAt });
+    verificationStore.set(key, { code: verificationCode, createdAt, attempts: 0 });
 
     await sendVerificationCodeEmail(email, verificationCode);
 
@@ -44,7 +89,15 @@ export const login = async (req, res) => {
 export const verifyCodeAndLogin = async (req, res) => {
   try {
     const { email, code } = req.body;
-    const stored = verificationStore.get(email);
+
+    // This endpoint has no Joi schema, so guard the types before the values
+    // reach the store or the database.
+    if (typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({ message: 'A valid email is required.' });
+    }
+
+    const key = storeKey(email);
+    const stored = verificationStore.get(key);
 
 
     if (!stored) {
@@ -54,17 +107,26 @@ export const verifyCodeAndLogin = async (req, res) => {
     const now = new Date();
     const diffMinutes = (now - new Date(stored.createdAt)) / (1000 * 60);
 
-    if (diffMinutes > 5) {
-      verificationStore.delete(email);
+    if (diffMinutes > CODE_TTL_MINUTES) {
+      verificationStore.delete(key);
       return res.status(400).json({ message: 'Verification code expired. Please request a new one.' });
     }
 
-    if (stored.code !== code) {
+    // Count the guess before checking it, and burn the code once the budget is
+    // spent. Without this the code stayed guessable for its full 5-minute life
+    // at an unlimited rate — 10^6 possibilities with no cost per wrong answer.
+    stored.attempts += 1;
+    if (stored.attempts > MAX_VERIFICATION_ATTEMPTS) {
+      verificationStore.delete(key);
+      return res.status(429).json({ message: 'Too many incorrect attempts. Please request a new code.' });
+    }
+
+    if (!codesMatch(stored.code, code)) {
       return res.status(400).json({ message: 'Invalid verification code.' });
     }
 
-    // Remove code after verification
-    verificationStore.delete(email);
+    // Remove code after verification — single use.
+    verificationStore.delete(key);
 
     // Resolve location from request (GAE headers → IP API fallback).
     // Failure here must never block login.

@@ -9,7 +9,6 @@ import ProductImage from "../models/productImage.js";
 import PromoCode from "../models/promoCode.js";
 
 import GovOrderRate from "../models/govOrderRate.js";
-import { Op } from "sequelize";
 import { sendOrderConfirmationEmail } from "../middlewares/mailer.middleware.js";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
@@ -362,7 +361,26 @@ export const checkout = async (req, res) => {
   }
 };
 
-export const updateGoogleSheet = async (sheetData) => {
+/**
+ * Internal helper — NOT an Express handler and not exported.
+ *
+ * It was previously registered as `router.post("/update/google-sheet", ...)`,
+ * which handed it the Express `req` object as `sheetData`. Serializing that
+ * threw on the request's circular references, the catch re-threw, and because
+ * nothing awaited the returned promise the rejection went unhandled and Node
+ * terminated the process. The guard below makes that misuse a caught 500
+ * inside checkout() instead of a crash.
+ *
+ * @param {Array<Array<string|number|null>>} sheetData rows to append
+ */
+const updateGoogleSheet = async (sheetData) => {
+  if (!Array.isArray(sheetData) || !sheetData.every(Array.isArray)) {
+    throw new TypeError(
+      "updateGoogleSheet expects an array of row arrays, received " +
+        Object.prototype.toString.call(sheetData)
+    );
+  }
+
   try {
     const authClient = await auth.getClient();
     const sheets = google.sheets({ version: "v4", auth: authClient });
