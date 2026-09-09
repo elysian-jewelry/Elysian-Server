@@ -14,6 +14,12 @@ entrypoint: node src/server.js
 #  All secrets are loaded at runtime from Google Secret Manager
 #  (see src/config/loadSecrets.js). NODE_ENV=production is what
 #  tells the app to use Secret Manager instead of a local .env.
+#
+#  The CORS allowlist is one of those values: ALLOWED_ORIGINS is a
+#  comma-separated origin list in Secret Manager, NOT an env_variable
+#  here, so it can be changed without redeploying. It must exist before
+#  this version deploys or startup aborts:
+#    printf 'https://elysian-jewelry.com,https://www.elysian-jewelry.com' | gcloud secrets create ALLOWED_ORIGINS --data-file=-
 # ─────────────────────────────────────────────────────────────
 env_variables:
   NODE_ENV: "production"

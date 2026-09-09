@@ -10,6 +10,13 @@ const SECRET_NAMES = [
   "GOOGLE_SPREAD_SHEET_ID",
   "GOOGLE_PRIVATE_KEY",
   "GOOGLE_CLIENT_EMAIL",
+  // Comma-separated CORS allowlist, e.g.
+  //   "https://elysian-jewelry.com,https://www.elysian-jewelry.com"
+  // Not a credential, but kept here so origins can be changed without a
+  // redeploy. Create it BEFORE deploying this version — every name in this
+  // list is required, and a missing secret aborts startup by design:
+  //   printf 'https://elysian-jewelry.com,https://www.elysian-jewelry.com' | gcloud secrets create ALLOWED_ORIGINS --data-file=-
+  "ALLOWED_ORIGINS",
 ];
 
 /**
