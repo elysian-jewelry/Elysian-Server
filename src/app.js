@@ -3,10 +3,16 @@ import dotenv from "dotenv";
 import morgan from "morgan";
 import initializeRoutes from "./routes/routes.js";
 import cors from "cors";
+import helmet from "helmet";
 import path from "path";
 import { fileURLToPath } from "url";
 import { authenticateJWT } from "./middlewares/auth.middleware.js";
+import { asyncHandler } from "./utils/asyncHandler.js";
 import { globalLimiter } from "./middlewares/rateLimit.middleware.js";
+import {
+  ErrorMiddleware,
+  NotFoundMiddleware,
+} from "./middlewares/error.middleware.js";
 import { connectToMongoDB } from "./config/mongodb.js";
 
 dotenv.config();
@@ -55,6 +61,9 @@ class App {
     // front end's — `true` here would let a client spoof X-Forwarded-For.
     this.app.set("trust proxy", 1);
 
+    // Stop advertising the framework in every response.
+    this.app.disable("x-powered-by");
+
     this.port = process.env.PORT || 8080;
     this.env = process.env.NODE_ENV || "development";
     this.__dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +79,39 @@ class App {
 
   // Middleware setup
   initializeMiddlewares() {
+    // Security headers first, so they are present even on responses produced
+    // by the CORS rejection path below.
+    this.app.use(
+      helmet({
+        // This service returns JSON and static product images — it never
+        // serves an HTML document — so nothing legitimate needs to load or
+        // frame anything. 'none' across the board is the tightest policy that
+        // still works.
+        contentSecurityPolicy: {
+          useDefaults: false,
+          directives: {
+            defaultSrc: ["'none'"],
+            frameAncestors: ["'none'"],
+            baseUri: ["'none'"],
+            formAction: ["'none'"],
+          },
+        },
+        // NOT the helmet default of "same-origin". Product images written by
+        // syncFolderImagesToProducts are served from THIS host
+        // (https://<api-host>/images/...) and embedded by the storefront on a
+        // different origin; "same-origin" or "same-site" would make the
+        // browser block every one of them. Reads are still gated by the CORS
+        // allowlist — this only permits the <img> embedding that the shop
+        // depends on.
+        crossOriginResourcePolicy: { policy: "cross-origin" },
+        // App Engine serves this host over HTTPS. `preload` is deliberately
+        // omitted: the apex here is appspot.com, which is not ours to submit
+        // to the preload list, and preloading is hard to undo.
+        hsts: { maxAge: 31_536_000, includeSubDomains: true },
+        referrerPolicy: { policy: "no-referrer" },
+      })
+    );
+
     const ALLOWED_ORIGINS = parseAllowedOrigins();
 
     // An empty allowlist in production would refuse every browser request
@@ -113,10 +155,16 @@ class App {
     );
 
     // ✅ Apply JWT middleware globally (excluding public routes)
-    this.app.use(authenticateJWT);
+    this.app.use(asyncHandler(authenticateJWT));
 
     // ✅ Load routes after auth middleware
     initializeRoutes(this.app);
+
+    // Anything that matched no route above is a 404, and anything that called
+    // next(err) lands in ErrorMiddleware. Both must be registered LAST — an
+    // error handler declared before the routes never sees their errors.
+    this.app.use(NotFoundMiddleware);
+    this.app.use(ErrorMiddleware);
   }
 
   // Start server

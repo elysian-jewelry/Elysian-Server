@@ -1,4 +1,5 @@
 import express from "express";
+import { wrapRouter } from "../utils/asyncRouter.js";
 import {
   syncFolderImagesToProducts,
   syncLocalImagesToGcsAndMongo,
@@ -38,7 +39,9 @@ import { getVisitStats } from "../controllers/visit.controller.js";
 // below is relative and the public URLs are unchanged: "/users" here is
 // GET /admin/users on the wire. Nothing that is not admin-only belongs in
 // this file — putting it here is what grants it the admin gate.
-const router = express.Router({ caseSensitive: true, strict: false });
+const router = wrapRouter(
+  express.Router({ caseSensitive: true, strict: false })
+);
 
 // ─── Admin visit stats ───
 router.get("/dashboard/visits", getVisitStats);

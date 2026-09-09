@@ -1,10 +1,13 @@
 // routes/user/profile.routes.js
 
 import express from "express";
+import { wrapRouter } from "../utils/asyncRouter.js";
 import { getUserProfile, updateUserProfile } from "../controllers/profile.controller.js";
 import { myAdminStatus } from "../controllers/admin.controller.js";
 
-const router = express.Router({ caseSensitive: true, strict: false });
+const router = wrapRouter(
+  express.Router({ caseSensitive: true, strict: false })
+);
 
 router.get("/profile", getUserProfile);
 router.put("/profile", updateUserProfile);

@@ -102,7 +102,7 @@ const lookupGeoByApi = async (ip) => {
   return { city: "Unknown", country: "Unknown" };
 };
 
-export const trackVisit = async (req, res) => {
+export const trackVisit = async (req, res, next) => {
   try {
     const ip = getClientIp(req);
     const ua = req.headers["user-agent"] || "";
@@ -131,7 +131,7 @@ export const trackVisit = async (req, res) => {
     res.status(200).json({ tracked: true });
   } catch (err) {
     if (err.code === 11000) return res.status(200).json({ tracked: true });
-    res.status(500).json({ message: "Server error", error: err.message });
+    next(err);
   }
 };
 
@@ -140,7 +140,7 @@ export const trackVisit = async (req, res) => {
  * Re-runs geo lookup for any visits stored as "Unknown" — useful for
  * old rows captured before geo detection was wired up correctly.
  */
-export const backfillVisitGeo = async (req, res) => {
+export const backfillVisitGeo = async (req, res, next) => {
   try {
     const limit = Math.min(parseInt(req.query.limit ?? "500", 10), 1000);
     const unknownVisits = await Visit.find({
@@ -161,11 +161,11 @@ export const backfillVisitGeo = async (req, res) => {
       updated,
     });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    next(err);
   }
 };
 
-export const getVisitStats = async (req, res) => {
+export const getVisitStats = async (req, res, next) => {
   try {
     const { from, to } = req.query;
     const today = getToday();
@@ -222,6 +222,6 @@ export const getVisitStats = async (req, res) => {
       byBrowser,
     });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    next(err);
   }
 };

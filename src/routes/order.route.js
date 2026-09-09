@@ -1,10 +1,13 @@
 import express from "express";
+import { wrapRouter } from "../utils/asyncRouter.js";
 import { listGovernorates, checkout, getUserOrders, validatePromoCode } from "../controllers/order.controller.js";
 import { checkoutSchema } from "../validation/order.validation.js";
 import { validate } from "../middlewares/validation.middleware.js";
 
 
-const router = express.Router({ caseSensitive: true, strict: false });
+const router = wrapRouter(
+  express.Router({ caseSensitive: true, strict: false })
+);
 
 // Public endpoint to fetch all governorates with id/name/cost
 router.get("/governorates/rates", listGovernorates);

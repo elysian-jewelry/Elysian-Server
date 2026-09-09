@@ -27,7 +27,7 @@ const auth = new google.auth.GoogleAuth({
  * GET /public/governorates
  * Returns: [{ id, name, cost }, ...]
  */
-export const listGovernorates = async (_req, res) => {
+export const listGovernorates = async (_req, res, next) => {
   try {
     const docs = await GovOrderRate.find({}, { name: 1, cost: 1 })
       .sort({ _id: 1 }) // ascending by id
@@ -41,12 +41,24 @@ export const listGovernorates = async (_req, res) => {
 
     res.status(200).json({ count: governorates.length, governorates });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    next(err);
   }
 };
 
+/**
+ * Has this user already redeemed this public promo code?
+ *
+ * `used_by` is an array of ObjectIds and `user_id` arrives as a string from
+ * the JWT, so both `includes(user_id)` and `includes(new ObjectId(user_id))`
+ * are always false — the first compares a string to an object, the second
+ * compares two distinct object references. Stringifying both sides is what
+ * makes the comparison actually work.
+ */
+const hasUsedPromo = (promo, user_id) =>
+  (promo?.used_by || []).some((id) => String(id) === String(user_id));
+
 // POST /api/promo/validate
-export const validatePromoCode = async (req, res) => {
+export const validatePromoCode = async (req, res, next) => {
   try {
     const { promo_code } = req.body;
     const user_id = req.user.user_id;
@@ -76,7 +88,12 @@ export const validatePromoCode = async (req, res) => {
     }
 
     // check if public promo already used by this user
-    if (promo.is_public && promo.used_by.includes(objectId)) {
+    //
+    // used_by holds ObjectId instances. includes() compares with SameValueZero,
+    // so an ObjectId built here never equals a stored one (different objects)
+    // and a string never equals an ObjectId — the guard was always false and
+    // every public code was infinitely reusable. Compare the string forms.
+    if (promo.is_public && hasUsedPromo(promo, user_id)) {
       return res
         .status(400)
         .json({ message: "You have already used this promo code." });
@@ -93,7 +110,7 @@ export const validatePromoCode = async (req, res) => {
 };
 
 
-export const checkout = async (req, res) => {
+export const checkout = async (req, res, next) => {
   try {
     const user_id = req.user.user_id;
     const {
@@ -143,7 +160,7 @@ export const checkout = async (req, res) => {
           .json({ message: "Invalid or expired promo code." });
       }
 
-      if (promo.is_public && promo.used_by.includes(user_id)) {
+      if (promo.is_public && hasUsedPromo(promo, user_id)) {
         return res.status(400).json({ message: "Promo code already used." });
       }
 
@@ -431,7 +448,7 @@ const updateGoogleSheet = async (sheetData) => {
   }
 };
 
-export const getUserOrders = async (req, res) => {
+export const getUserOrders = async (req, res, next) => {
   const user_id = req.user.user_id;
 
   try {
@@ -510,6 +527,6 @@ export const getUserOrders = async (req, res) => {
     res.status(200).json(formattedOrders);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error retrieving orders.", error });
+    next(error);
   }
 };

@@ -1,4 +1,5 @@
 import express from "express";
+import { wrapRouter } from "../utils/asyncRouter.js";
 import {
   login,
   verifyCodeAndLogin,
@@ -8,7 +9,9 @@ import { validate } from "../middlewares/validation.middleware.js";
 import { loginSchema } from "../validation/users.auth.validation.js";
 import { authLimiter } from "../middlewares/rateLimit.middleware.js";
 
-const router = express.Router({ caseSensitive: true, strict: false });
+const router = wrapRouter(
+  express.Router({ caseSensitive: true, strict: false })
+);
 
 // Auth Routes
 // authLimiter runs before validation so malformed floods are cheap to reject,

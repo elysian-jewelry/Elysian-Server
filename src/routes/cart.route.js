@@ -1,4 +1,5 @@
 import express from "express";
+import { wrapRouter } from "../utils/asyncRouter.js";
 import {
   addItemToCart,
   getUserCart,
@@ -7,7 +8,9 @@ import {
   deleteCartItem,
 } from "../controllers/cart.controller.js";
 
-const router = express.Router({ caseSensitive: true, strict: false });
+const router = wrapRouter(
+  express.Router({ caseSensitive: true, strict: false })
+);
 
 // Add product to cart
 router.post("/cart/add", addItemToCart);

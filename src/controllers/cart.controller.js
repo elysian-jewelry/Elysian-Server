@@ -10,7 +10,7 @@ const attrsToObject = (m) => {
   return { ...m };
 };
 
-export const addItemToCart = async (req, res) => {
+export const addItemToCart = async (req, res, next) => {
   try {
     const { product_id, variant_id, quantity, notes } = req.body;
     const sanitizedNotes = typeof notes === "string" && notes.trim() ? notes.trim().slice(0, 500) : null;
@@ -147,7 +147,7 @@ export const addItemToCart = async (req, res) => {
     return res.status(200).json({ message: "Product added to cart", cart });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: "Error adding to cart", error });
+    return next(error);
   }
 };
 
@@ -176,7 +176,7 @@ const recalculateCartTotal = async (cartId) => {
 };
 
 // Increment item quantity
-export const incrementCartItem = async (req, res) => {
+export const incrementCartItem = async (req, res, next) => {
   try {
     const { cart_item_id } = req.body;
     const user_id = req.user.user_id;
@@ -219,7 +219,7 @@ export const incrementCartItem = async (req, res) => {
 };
 
 // Decrement item quantity
-export const decrementCartItem = async (req, res) => {
+export const decrementCartItem = async (req, res, next) => {
   try {
     const { cart_item_id } = req.body;
     const user_id = req.user.user_id;
@@ -249,7 +249,7 @@ export const decrementCartItem = async (req, res) => {
   }
 };
 
-export const deleteCartItem = async (req, res) => {
+export const deleteCartItem = async (req, res, next) => {
   try {
     const { cart_item_id } = req.body;
     const user_id = req.user.user_id;
@@ -275,7 +275,7 @@ export const deleteCartItem = async (req, res) => {
   }
 };
 
-export const getUserCart = async (req, res) => {
+export const getUserCart = async (req, res, next) => {
   try {
     const user_id = req.user.user_id;
 
@@ -349,6 +349,6 @@ export const getUserCart = async (req, res) => {
     return res.status(200).json({ success: true, cart: simplifiedCart });
   } catch (error) {
     console.error("Error fetching cart:", error);
-    return res.status(500).json({ message: "Error fetching cart", error });
+    return next(error);
   }
 };

@@ -6,6 +6,7 @@ import orderRoute from "./order.route.js"; // Default import
 import profileRoute from "./profile.route.js"; // Default import
 import AdminRoute from "./admin.route.js"; // Default import
 import { requireAdmin } from "../middlewares/auth.middleware.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 
 export default (app) => {
@@ -20,5 +21,5 @@ export default (app) => {
   // of the routing tree rather than a string test any URL spelling can dodge:
   // nothing inside AdminRoute is reachable without passing requireAdmin, and
   // routes added there in future are covered automatically.
-  app.use("/admin", requireAdmin, AdminRoute);
+  app.use("/admin", asyncHandler(requireAdmin), AdminRoute);
 };

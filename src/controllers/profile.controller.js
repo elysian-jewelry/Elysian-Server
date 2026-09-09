@@ -1,7 +1,7 @@
 import User from "../models/user.js";
 
 // Get user profile
-export const getUserProfile = async (req, res) => {
+export const getUserProfile = async (req, res, next) => {
   try {
     const user_id = req.user.user_id;
 
@@ -17,7 +17,7 @@ export const getUserProfile = async (req, res) => {
 };
 
 // Update user profile
-export const updateUserProfile = async (req, res) => {
+export const updateUserProfile = async (req, res, next) => {
   try {
     const user_id = req.user.user_id;
     const { birthday } = req.body;

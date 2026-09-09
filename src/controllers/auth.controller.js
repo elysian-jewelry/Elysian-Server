@@ -97,7 +97,7 @@ const generateToken = (user) => {
 };
 
 
-export const login = async (req, res) => {
+export const login = async (req, res, next) => {
   try {
     const { email } = req.body;
     const key = storeKey(email);
@@ -126,11 +126,11 @@ export const login = async (req, res) => {
      res.status(200).json({ message: 'Verification code sent to your email.' });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Server error", error: err.message });
+    next(err);
   }
 };
 
-export const verifyCodeAndLogin = async (req, res) => {
+export const verifyCodeAndLogin = async (req, res, next) => {
   try {
     const { email, code } = req.body;
 
@@ -237,6 +237,6 @@ export const verifyCodeAndLogin = async (req, res) => {
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Server error', error: err.message });
+    next(err);
   }
 };

@@ -2,7 +2,7 @@ import Product from "../models/product.js";
 import HomeSection from "../models/homeSection.js";
 import ProductCategory from "../models/productCategory.js";
 
-export const getCategories = async (req, res) => {
+export const getCategories = async (req, res, next) => {
   try {
     const managed = await ProductCategory.find({ is_active: true })
       .sort({ sort_order: 1, name: 1 })
@@ -11,7 +11,7 @@ export const getCategories = async (req, res) => {
     return res.status(200).json(managed.map((c) => c.name));
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: "Error fetching categories", error });
+    return next(error);
   }
 };
 
@@ -32,31 +32,25 @@ const hydrateProductIds = async (ids) => {
   return ids.map((id) => byId.get(String(id))).filter(Boolean);
 };
 
-export const getFeaturedProducts = async (req, res) => {
+export const getFeaturedProducts = async (req, res, next) => {
   try {
     const home = await loadHomeSection();
     const products = await hydrateProductIds(home.featured);
     return res.status(200).json(formatProductResponse(products));
   } catch (error) {
     console.error("Error fetching featured products:", error);
-    return res.status(500).json({
-      message: "Error fetching featured products",
-      error: error.message,
-    });
+    return next(error);
   }
 };
 
-export const getNewArrivalProducts = async (req, res) => {
+export const getNewArrivalProducts = async (req, res, next) => {
   try {
     const home = await loadHomeSection();
     const products = await hydrateProductIds(home.new_arrivals);
     return res.status(200).json(formatProductResponse(products));
   } catch (error) {
     console.error("Error fetching new arrivals:", error);
-    return res.status(500).json({
-      message: "Error fetching new arrivals",
-      error: error.message,
-    });
+    return next(error);
   }
 };
 
@@ -67,7 +61,7 @@ const attrsToObject = (m) => {
   return { ...m };
 };
 
-export const getProductsByType = async (req, res) => {
+export const getProductsByType = async (req, res, next) => {
   try {
     const { type } = req.query;
 
@@ -94,7 +88,7 @@ export const getProductsByType = async (req, res) => {
     return res.status(200).json(formatProductResponse(products));
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error fetching products by type", error });
+    next(error);
   }
 };
 
@@ -135,7 +129,7 @@ const formatProductResponse = (productsRaw) => {
   });
 };
 
-export const getAllProducts = async (req, res) => {
+export const getAllProducts = async (req, res, next) => {
   try {
     const populateImages = {
   path: "images",
@@ -158,6 +152,6 @@ export const getAllProducts = async (req, res) => {
     res.status(200).json(formatProductResponse(products));
   } catch (error) {
     console.error("Error fetching products:", error);
-    res.status(500).json({ message: "Error fetching products", error });
+    next(error);
   }
 };

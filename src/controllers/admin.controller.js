@@ -140,7 +140,7 @@ function parseNonNegativeCost(value) {
 }
 
 /** POST /admin/delivery-rates/governorates — create (single indexed write). */
-export const createGovOrderRate = async (req, res) => {
+export const createGovOrderRate = async (req, res, next) => {
   const idResult = parsePositiveInt(req.body.id, "id");
   if (idResult.error) {
     return res.status(400).json({ message: idResult.error });
@@ -170,17 +170,16 @@ export const createGovOrderRate = async (req, res) => {
   } catch (err) {
     if (err.code === 11000) {
       return res.status(409).json({
-        message: "A governorate with this id or name already exists.",
-        keyValue: err.keyValue,
+        message: "A governorate with this id or name already exists."
       });
     }
     console.error("createGovOrderRate:", err);
-    return res.status(500).json({ message: "Internal server error", error: err.message });
+    return next(err);
   }
 };
 
 /** PUT /admin/delivery-rates/governorates/:id — partial update by primary key. */
-export const updateGovOrderRate = async (req, res) => {
+export const updateGovOrderRate = async (req, res, next) => {
   const idResult = parsePositiveInt(req.params.id, "id");
   if (idResult.error) {
     return res.status(400).json({ message: idResult.error });
@@ -229,17 +228,16 @@ export const updateGovOrderRate = async (req, res) => {
   } catch (err) {
     if (err.code === 11000) {
       return res.status(409).json({
-        message: "name already exists for another governorate.",
-        keyValue: err.keyValue,
+        message: "name already exists for another governorate."
       });
     }
     console.error("updateGovOrderRate:", err);
-    return res.status(500).json({ message: "Internal server error", error: err.message });
+    return next(err);
   }
 };
 
 /** DELETE /admin/delivery-rates/governorates/:id — delete by primary key. */
-export const deleteGovOrderRate = async (req, res) => {
+export const deleteGovOrderRate = async (req, res, next) => {
   const idResult = parsePositiveInt(req.params.id, "id");
   if (idResult.error) {
     return res.status(400).json({ message: idResult.error });
@@ -257,11 +255,11 @@ export const deleteGovOrderRate = async (req, res) => {
     });
   } catch (err) {
     console.error("deleteGovOrderRate:", err);
-    return res.status(500).json({ message: "Internal server error", error: err.message });
+    return next(err);
   }
 };
 
-export const deleteUserOrdersByEmail = async (req, res) => {
+export const deleteUserOrdersByEmail = async (req, res, next) => {
   const { email } = req.body;
 
   if (!email) {
@@ -300,10 +298,7 @@ export const deleteUserOrdersByEmail = async (req, res) => {
     });
   } catch (error) {
     console.error("Delete user orders error:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-      error: error.message,
-    });
+    return next(error);
   }
 };
 
@@ -312,7 +307,7 @@ export const deleteUserOrdersByEmail = async (req, res) => {
  * 1) Delete all product_images docs and clear images[] on every product (no duplicate URLs).
  * 2) Scan disk and attach images per folder; primary = first file after sort.
  */
-export const syncFolderImagesToProducts = async (req, res) => {
+export const syncFolderImagesToProducts = async (req, res, next) => {
   const PRODUCT_TYPES = await getCategoryNameSet();
   const orphanByCategory = Object.fromEntries(
     [...PRODUCT_TYPES].map((t) => [t, 0])
@@ -446,7 +441,8 @@ export const syncFolderImagesToProducts = async (req, res) => {
     return res.status(200).json(summary);
   } catch (err) {
     summary.success = false;
-    summary.errors.push(err.message);
+    console.error("image sync failed:", err);
+    summary.errors.push("Image sync failed. See server logs.");
     return res.status(500).json(summary);
   }
 };
@@ -469,7 +465,7 @@ function mimeFromImageFilename(name) {
  * 2) Delete all product_images rows and clear images[] on every product
  * 3) Scan IMAGES_ROOT (same layout as local-folders sync), upload each file to GCS, save URLs in MongoDB
  */
-export const syncLocalImagesToGcsAndMongo = async (req, res) => {
+export const syncLocalImagesToGcsAndMongo = async (req, res, next) => {
   const PRODUCT_TYPES = await getCategoryNameSet();
   const orphanByCategory = Object.fromEntries(
     [...PRODUCT_TYPES].map((t) => [t, 0])
@@ -618,12 +614,13 @@ export const syncLocalImagesToGcsAndMongo = async (req, res) => {
     return res.status(200).json(summary);
   } catch (err) {
     summary.success = false;
-    summary.errors.push(err.message);
+    console.error("image sync failed:", err);
+    summary.errors.push("Image sync failed. See server logs.");
     return res.status(500).json(summary);
   }
 };
 
-export const getAllUsersLatest = async (req, res) => {
+export const getAllUsersLatest = async (req, res, next) => {
   try {
     const pipeline = [
       // Prefer created_at; fallback to createdAt; if both missing, sort by _id as tie-breaker
@@ -648,7 +645,7 @@ export const getAllUsersLatest = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching users:", error);
-    return res.status(500).json({ message: "Internal server error", error });
+    return next(error);
   }
 };
 
@@ -688,7 +685,7 @@ const populateHomeProducts = async (ids) => {
 };
 
 /** GET /admin/home-sections — return curated lists + every product available to pick from. */
-export const getHomeSections = async (req, res) => {
+export const getHomeSections = async (req, res, next) => {
   try {
     const home = await HomeSection.findOne({ key: "home" }).lean();
     const featuredIds = home?.featured || [];
@@ -725,12 +722,12 @@ export const getHomeSections = async (req, res) => {
     });
   } catch (error) {
     console.error("getHomeSections error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
 /** PUT /admin/home-sections/:section — body { product_ids: ObjectId[] } */
-export const updateHomeSection = async (req, res) => {
+export const updateHomeSection = async (req, res, next) => {
   try {
     const section = String(req.params.section || "").trim();
     if (!HOME_SECTION_KEYS.includes(section)) {
@@ -788,9 +785,9 @@ export const updateHomeSection = async (req, res) => {
   } catch (error) {
     console.error("updateHomeSection error:", error);
     if (error.name === "ValidationError") {
-      return res.status(400).json({ message: error.message });
+      return res.status(400).json({ message: "Invalid home section payload." });
     }
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
@@ -799,7 +796,7 @@ export const updateHomeSection = async (req, res) => {
  * Returns registered-user counts grouped by country, governorate, and city.
  * Only counts users captured with a known value for each dimension.
  */
-export const getUsersByLocation = async (req, res) => {
+export const getUsersByLocation = async (req, res, next) => {
   try {
     const limit = Math.min(parseInt(req.query.limit ?? "20", 10), 100);
 
@@ -839,11 +836,11 @@ export const getUsersByLocation = async (req, res) => {
     });
   } catch (error) {
     console.error("Users by location error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
-export const updateProductSortOrder = async (req, res) => {
+export const updateProductSortOrder = async (req, res, next) => {
   const { name, category, sort_order } = req.body;
 
   if (!name || !category || sort_order == null) {
@@ -912,15 +909,11 @@ export const updateProductSortOrder = async (req, res) => {
     });
   } catch (err) {
     console.error("Sort update error:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error while updating sort order.",
-      error: err.message,
-    });
+    return next(err);
   }
 };
 
-export const deleteProductsByNameAndType = async (req, res) => {
+export const deleteProductsByNameAndType = async (req, res, next) => {
   try {
     let { products } = req.body;
 
@@ -1049,14 +1042,11 @@ export const deleteProductsByNameAndType = async (req, res) => {
     });
   } catch (error) {
     console.error("Delete by name+type error:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-      error: error.message,
-    });
+    return next(error);
   }
 };
 
-export const addProductsWithVariants = async (req, res) => {
+export const addProductsWithVariants = async (req, res, next) => {
   try {
     if (!req.body || typeof req.body !== "object") {
       return res.status(400).json({
@@ -1297,19 +1287,15 @@ export const addProductsWithVariants = async (req, res) => {
     // Handle unique index error nicely
     if (error.code === 11000) {
       return res.status(409).json({
-        message: "Duplicate product name detected in the same category",
-        error: error.keyValue,
+        message: "Duplicate product name detected in the same category"
       });
     }
 
-    return res.status(500).json({
-      message: "Internal server error",
-      error: error.message,
-    });
+    return next(error);
   }
 };
 
-export const getAllOrdersFull = async (req, res) => {
+export const getAllOrdersFull = async (req, res, next) => {
   try {
     const ORDER_ITEMS_COLL = OrderItem.collection.name; // "order_items"
     const USERS_COLL = User.collection.name; // "users"
@@ -1405,12 +1391,12 @@ export const getAllOrdersFull = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching all orders with details:", error);
-    return res.status(500).json({ message: "Internal server error", error });
+    return next(error);
   }
 };
 
 
-export const updateProduct = async (req, res) => {
+export const updateProduct = async (req, res, next) => {
   const isMultipart = (req.headers["content-type"] || "")
     .toLowerCase()
     .includes("multipart/form-data");
@@ -1852,19 +1838,15 @@ export const updateProduct = async (req, res) => {
 
     if (error.code === 11000) {
       return res.status(409).json({
-        message: "Duplicate variant (same size/color already exists).",
-        error: error.keyValue,
+        message: "Duplicate variant (same size/color already exists)."
       });
     }
 
-    return res.status(500).json({
-      message: "Internal server error",
-      error: error.message,
-    });
+    return next(error);
   }
 };
 
-export const deleteVariant = async (req, res) => {
+export const deleteVariant = async (req, res, next) => {
   const { name, type, variant_id, attributes } = req.body;
 
   if (!name || !type) {
@@ -1961,14 +1943,11 @@ export const deleteVariant = async (req, res) => {
     });
   } catch (error) {
     console.error("Error deleting variant:", error);
-    return res.status(500).json({
-      message: "Internal server error",
-      error: error.message,
-    });
+    return next(error);
   }
 };
 
-export const createPublicPromo = async (req, res) => {
+export const createPublicPromo = async (req, res, next) => {
   try {
     const { promo_code, discount, expiry_date } = req.body;
 
@@ -2027,7 +2006,7 @@ export const createPublicPromo = async (req, res) => {
   }
 };
 
-export const getAllPromoCodes = async (req, res) => {
+export const getAllPromoCodes = async (req, res, next) => {
   try {
     const promos = await PromoCode.find({})
       .sort({ created_at: -1 })
@@ -2042,7 +2021,7 @@ export const getAllPromoCodes = async (req, res) => {
   }
 };
 
-export const deletePromoCodeById = async (req, res) => {
+export const deletePromoCodeById = async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
@@ -2074,7 +2053,7 @@ export const deletePromoCodeById = async (req, res) => {
  * Single-call summary: total revenue, orders, users, new users this month,
  * average order value, orders by status, revenue compared to last month.
  */
-export const getDashboardOverview = async (req, res) => {
+export const getDashboardOverview = async (req, res, next) => {
   try {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -2201,7 +2180,7 @@ export const getDashboardOverview = async (req, res) => {
     });
   } catch (error) {
     console.error("Dashboard overview error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
@@ -2210,7 +2189,7 @@ export const getDashboardOverview = async (req, res) => {
  * Top selling products ranked by total quantity sold.
  * Query params: ?limit=10&year=2026&status=exclude-cancelled
  */
-export const getTopSellingProducts = async (req, res) => {
+export const getTopSellingProducts = async (req, res, next) => {
   try {
     const limit = parseInt(req.query.limit ?? 20, 10);
     const year = req.query.year ? parseInt(req.query.year, 10) : null;
@@ -2302,7 +2281,7 @@ export const getTopSellingProducts = async (req, res) => {
     });
   } catch (error) {
     console.error("Top selling products error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
@@ -2311,7 +2290,7 @@ export const getTopSellingProducts = async (req, res) => {
  * New user registrations per month for a given year.
  * Query params: ?year=2026
  */
-export const getMonthlyUsers = async (req, res) => {
+export const getMonthlyUsers = async (req, res, next) => {
   try {
     const now = new Date();
     const year = parseInt(req.query.year ?? now.getFullYear(), 10);
@@ -2368,7 +2347,7 @@ export const getMonthlyUsers = async (req, res) => {
     });
   } catch (error) {
     console.error("Monthly users error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
@@ -2377,7 +2356,7 @@ export const getMonthlyUsers = async (req, res) => {
  * Total sales broken down by product category (type).
  * Query params: ?year=2026&status=exclude-cancelled
  */
-export const getSalesByCategory = async (req, res) => {
+export const getSalesByCategory = async (req, res, next) => {
   try {
     const year = req.query.year ? parseInt(req.query.year, 10) : null;
     const statusParam = (req.query.status || "exclude-cancelled").trim().toLowerCase();
@@ -2451,11 +2430,11 @@ export const getSalesByCategory = async (req, res) => {
     });
   } catch (error) {
     console.error("Sales by category error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
-export const getMonthlyOrderTotals = async (req, res) => {
+export const getMonthlyOrderTotals = async (req, res, next) => {
   try {
     // Query params (all optional)
     const now = new Date();
@@ -2575,7 +2554,7 @@ export const getMonthlyOrderTotals = async (req, res) => {
     });
   } catch (error) {
     console.error("Error aggregating monthly order totals:", error);
-    return res.status(500).json({ message: "Internal server error", error });
+    return next(error);
   }
 };
 
@@ -2644,7 +2623,7 @@ const validateVariantAttributes = (attributes, optionType) => {
 };
 
 /** GET /admin/admins — list every admin email. */
-export const listAdmins = async (req, res) => {
+export const listAdmins = async (req, res, next) => {
   try {
     const docs = await Admin.find({}).sort({ created_at: 1 }).lean();
     return res.status(200).json({
@@ -2658,12 +2637,12 @@ export const listAdmins = async (req, res) => {
     });
   } catch (error) {
     console.error("listAdmins error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
 /** POST /admin/admins — body { email }. */
-export const createAdmin = async (req, res) => {
+export const createAdmin = async (req, res, next) => {
   try {
     const rawEmail = String(req.body?.email || "").trim().toLowerCase();
     if (!EMAIL_RE.test(rawEmail)) {
@@ -2685,12 +2664,12 @@ export const createAdmin = async (req, res) => {
       return res.status(409).json({ message: "Admin already exists." });
     }
     console.error("createAdmin error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
 /** DELETE /admin/admins/:id — refuses to delete the last remaining admin. */
-export const deleteAdmin = async (req, res) => {
+export const deleteAdmin = async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -2725,7 +2704,7 @@ export const deleteAdmin = async (req, res) => {
     });
   } catch (error) {
     console.error("deleteAdmin error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
@@ -2733,7 +2712,7 @@ export const deleteAdmin = async (req, res) => {
  * GET /me/admin-status — used by the frontend gate. Authenticated; returns
  * `{ is_admin: bool, email }` for the JWT-bearing user.
  */
-export const myAdminStatus = async (req, res) => {
+export const myAdminStatus = async (req, res, next) => {
   try {
     const email = req.user?.email;
     if (!email) {
@@ -2744,7 +2723,7 @@ export const myAdminStatus = async (req, res) => {
     return res.status(200).json({ is_admin: !!ok, email });
   } catch (error) {
     console.error("myAdminStatus error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
@@ -2758,7 +2737,7 @@ const normalizeCategoryName = (raw) =>
     .replace(/\s+/g, " ");
 
 /** GET /admin/categories — list every category (active or not), with product counts. */
-export const listCategories = async (req, res) => {
+export const listCategories = async (req, res, next) => {
   try {
     const [cats, counts] = await Promise.all([
       ProductCategory.find({}).sort({ sort_order: 1, name: 1 }).lean(),
@@ -2780,7 +2759,7 @@ export const listCategories = async (req, res) => {
     });
   } catch (error) {
     console.error("listCategories error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 
@@ -2788,7 +2767,7 @@ export const listCategories = async (req, res) => {
 
 /** PUT /admin/categories/:id — body { name?, sort_order?, is_active? }. */
 /** PUT /admin/categories/:id — only sort_order and is_active are editable. */
-export const updateCategory = async (req, res) => {
+export const updateCategory = async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -2833,7 +2812,7 @@ export const updateCategory = async (req, res) => {
     });
   } catch (error) {
     console.error("updateCategory error:", error);
-    return res.status(500).json({ message: "Internal server error", error: error.message });
+    return next(error);
   }
 };
 

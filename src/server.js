@@ -23,6 +23,22 @@ const startServer = async () => {
   birthdayPromoCron(); // ✅ Cron can run now
 };
 
+// Last-resort net. asyncHandler routes rejections from route handlers into
+// ErrorMiddleware, but a rejection from outside the request cycle (a cron
+// tick, a background task) has nowhere else to go — and since Node 15 an
+// unhandled rejection terminates the process by default, which on a
+// single-instance service is a full outage. Log it and keep serving.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
+
+// An uncaught exception leaves the process in an undefined state, so unlike
+// the above this one logs and then exits so App Engine restarts it cleanly.
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception — exiting so the instance restarts:", err);
+  process.exit(1);
+});
+
 startServer().catch((err) => {
   // A startup failure (e.g. a secret that can't be read) would otherwise
   // surface as an opaque unhandled rejection. Log it clearly so it shows
