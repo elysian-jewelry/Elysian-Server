@@ -15,6 +15,7 @@ import {
   getMonthlyOrderTotals,
   deleteProductsByNameAndType,
   deleteUserOrdersByEmail,
+  updateUserBirthdayByEmail,
   createGovOrderRate,
   updateGovOrderRate,
   deleteGovOrderRate,
@@ -34,6 +35,8 @@ import {
 import { uploadProductImagesMulter } from "../middlewares/multerProductImages.middleware.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js";
 import { getVisitStats } from "../controllers/visit.controller.js";
+import { validate } from "../middlewares/validation.middleware.js";
+import { updateUserBirthdaySchema } from "../validation/admin.validation.js";
 
 // Mounted at /admin behind requireAdmin (see routes/routes.js), so every path
 // below is relative and the public URLs are unchanged: "/users" here is
@@ -47,6 +50,15 @@ const router = wrapRouter(
 router.get("/dashboard/visits", getVisitStats);
 
 router.delete("/users/orders", deleteUserOrdersByEmail);
+
+// Body-based like the delete above so the email never lands in a URL or
+// access log. Joi rejects anything that is not a plain string before the
+// controller re-normalizes and looks the user up.
+router.put(
+  "/users/birthday",
+  validate(updateUserBirthdaySchema),
+  updateUserBirthdayByEmail
+);
 
 router.post("/products/images/sync/local-folders", syncFolderImagesToProducts);
 

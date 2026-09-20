@@ -17,6 +17,7 @@ import Admin from "../models/admin.js";
 import ProductCategory from "../models/productCategory.js";
 import { buildAttributesKey } from "../models/productVariant.js";
 import { invalidateAdminCache } from "../services/adminCache.service.js";
+import { BIRTHDAY_PATTERN } from "../validation/admin.validation.js";
 import {
   getCategoryNameSet,
   invalidateCategoryCache,
@@ -298,6 +299,140 @@ export const deleteUserOrdersByEmail = async (req, res, next) => {
     });
   } catch (error) {
     console.error("Delete user orders error:", error);
+    return next(error);
+  }
+};
+
+/** Age bounds for an admin-entered birthday. 14 matches the storefront's own rule. */
+const MIN_BIRTHDAY_AGE_YEARS = 14;
+const MAX_BIRTHDAY_AGE_YEARS = 120;
+
+/**
+ * Parse a "YYYY-MM-DD" string into a UTC-midnight Date, or return null if it
+ * is not a real calendar date. Date.UTC() silently rolls "2024-02-30" over to
+ * March 1st, so the components are compared back against the input to catch
+ * that. UTC midnight is also what Mongoose produces when the storefront saves
+ * the same string through /profile, so both paths store the same value and
+ * the birthday cron's month/day match keeps working.
+ */
+const parseBirthday = (value) => {
+  if (typeof value !== "string" || !BIRTHDAY_PATTERN.test(value)) return null;
+  const [y, m, d] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (
+    date.getUTCFullYear() !== y ||
+    date.getUTCMonth() !== m - 1 ||
+    date.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return date;
+};
+
+/** Date-only ISO string ("YYYY-MM-DD") or null. */
+const toDateOnly = (date) =>
+  date instanceof Date && !Number.isNaN(date.getTime())
+    ? date.toISOString().slice(0, 10)
+    : null;
+
+/**
+ * PUT /admin/users/birthday
+ * Body: { email, birthday: "YYYY-MM-DD" }
+ *
+ * Sets one user's birthday, looked up by email. The route runs behind the
+ * /admin mount (requireAdmin) and validate(updateUserBirthdaySchema); the
+ * checks here are repeated on purpose because the shared validate() discards
+ * Joi's converted values, and the type guards are what keep a non-string
+ * `email` out of the Mongo query.
+ *
+ * The user must already exist — this never creates one. The write is a
+ * single explicit $set of `birthday`; nothing else from the body can reach
+ * the document.
+ */
+export const updateUserBirthdayByEmail = async (req, res, next) => {
+  const { email, birthday } = req.body ?? {};
+
+  if (typeof email !== "string" || typeof birthday !== "string") {
+    return res
+      .status(400)
+      .json({ message: "email and birthday must be strings" });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return res.status(400).json({ message: "email is required" });
+  }
+
+  const birthdayDate = parseBirthday(birthday.trim());
+  if (!birthdayDate) {
+    return res
+      .status(400)
+      .json({ message: "birthday must be a real date in YYYY-MM-DD format" });
+  }
+
+  // Age bounds, evaluated at UTC midnight today so the comparison is on the
+  // same footing as the stored value.
+  const now = new Date();
+  const todayUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  if (birthdayDate > todayUtc) {
+    return res.status(400).json({ message: "birthday cannot be in the future" });
+  }
+  const minAllowed = new Date(todayUtc);
+  minAllowed.setUTCFullYear(todayUtc.getUTCFullYear() - MIN_BIRTHDAY_AGE_YEARS);
+  if (birthdayDate > minAllowed) {
+    return res.status(400).json({
+      message: `User must be at least ${MIN_BIRTHDAY_AGE_YEARS} years old`,
+    });
+  }
+  const maxAllowed = new Date(todayUtc);
+  maxAllowed.setUTCFullYear(todayUtc.getUTCFullYear() - MAX_BIRTHDAY_AGE_YEARS);
+  if (birthdayDate < maxAllowed) {
+    return res.status(400).json({
+      message: `Birthday cannot be more than ${MAX_BIRTHDAY_AGE_YEARS} years ago`,
+    });
+  }
+
+  try {
+    // Users are stored with the casing the client sent at signup, so an exact
+    // match is tried first and a case-insensitive one second. Collation keeps
+    // this a plain equality — no regex built from user input.
+    let user = await User.findOne({ email: normalizedEmail }).select(
+      "_id email birthday"
+    );
+    if (!user) {
+      user = await User.findOne({ email: normalizedEmail })
+        .collation({ locale: "en", strength: 2 })
+        .select("_id email birthday");
+    }
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const previousBirthday = toDateOnly(user.birthday);
+
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { birthday: birthdayDate } }
+    );
+
+    // Audit trail: who changed whose birthday, and from what.
+    console.log(
+      `Admin ${req.user?.email ?? "unknown"} set birthday for ${user.email}: ` +
+        `${previousBirthday ?? "none"} -> ${toDateOnly(birthdayDate)}`
+    );
+
+    return res.status(200).json({
+      message: "Birthday updated successfully",
+      user: {
+        email: user.email,
+        previous_birthday: previousBirthday,
+        birthday: toDateOnly(birthdayDate),
+      },
+    });
+  } catch (error) {
+    console.error("Update user birthday error:", error);
     return next(error);
   }
 };
