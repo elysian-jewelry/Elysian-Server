@@ -13,6 +13,13 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Calendar year (Africa/Cairo) of the last birthday promo code issued to
+    // this user. One code per birthday-year: the grant claims this field
+    // atomically before it creates a code, so it can never send twice.
+    birthday_promo_sent_year: {
+      type: Number,
+      default: null,
+    },
     country: {
       type: String,
       default: "Unknown",

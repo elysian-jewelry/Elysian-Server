@@ -1,4 +1,5 @@
 import User from "../models/user.js";
+import { grantBirthdayPromoIfDue } from "../services/birthdayPromo.service.js";
 
 // Get user profile
 export const getUserProfile = async (req, res, next) => {
@@ -28,6 +29,17 @@ export const updateUserProfile = async (req, res, next) => {
     user.birthday = birthday;
 
     await user.save();
+
+    // If the date just saved is today, issue this year's birthday code now
+    // rather than leaving it to the next cron tick (which would miss anyone
+    // who set it after the tick). The grant is idempotent, and a mail
+    // failure must not turn a successful save into an error — it is logged
+    // and the cron retries.
+    try {
+      await grantBirthdayPromoIfDue(user);
+    } catch (err) {
+      console.error(`Birthday promo after profile update failed for ${user.email}:`, err?.message || err);
+    }
 
     res.json({ message: "Profile updated successfully" });
   } catch (error) {

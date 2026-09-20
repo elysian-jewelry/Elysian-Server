@@ -34,6 +34,7 @@ import {
 } from "../controllers/admin.controller.js";
 import { uploadProductImagesMulter } from "../middlewares/multerProductImages.middleware.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js";
+import { runBirthdayPromoJob } from "../services/birthdayPromo.service.js";
 import { getVisitStats } from "../controllers/visit.controller.js";
 import { validate } from "../middlewares/validation.middleware.js";
 import { updateUserBirthdaySchema } from "../validation/admin.validation.js";
@@ -143,6 +144,17 @@ router.delete("/admins/:id", deleteAdmin);
 // ─── Product category management (reorder + toggle only; creation/deletion is automatic) ───
 router.get("/categories", listCategories);
 router.put("/categories/:id", updateCategory);
+
+// Manual catch-up for the birthday promo job. Safe to hit repeatedly: each
+// user is granted at most one code per year regardless of how often it runs.
+router.post("/jobs/birthday-promo", async (req, res) => {
+  try {
+    const result = await runBirthdayPromoJob();
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 router.post("/jobs/birthday-reminder", async (req, res) => {
   try {

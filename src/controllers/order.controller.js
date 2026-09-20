@@ -69,12 +69,13 @@ export const validatePromoCode = async (req, res, next) => {
 
     const formattedCode = promo_code.trim().toUpperCase();
     const objectId = new mongoose.Types.ObjectId(user_id);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
 
+    // Compare against the current instant, exactly as createOrder does below.
+    // The previous midnight-in-process-TZ comparison let this endpoint accept
+    // a code that checkout would then reject as expired.
     const promo = await PromoCode.findOne({
       promo_code: formattedCode,
-      expiry_date: { $gte: today },
+      expiry_date: { $gte: new Date() },
       $or: [
         { user_id: objectId }, // private promo
         { is_public: true }, // public promo

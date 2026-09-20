@@ -18,6 +18,7 @@ import ProductCategory from "../models/productCategory.js";
 import { buildAttributesKey } from "../models/productVariant.js";
 import { invalidateAdminCache } from "../services/adminCache.service.js";
 import { BIRTHDAY_PATTERN } from "../validation/admin.validation.js";
+import { grantBirthdayPromoIfDue } from "../services/birthdayPromo.service.js";
 import {
   getCategoryNameSet,
   invalidateCategoryCache,
@@ -423,6 +424,22 @@ export const updateUserBirthdayByEmail = async (req, res, next) => {
         `${previousBirthday ?? "none"} -> ${toDateOnly(birthdayDate)}`
     );
 
+    // If the corrected date is today, issue this year's code immediately
+    // instead of waiting for the next cron tick. Idempotent: a user who
+    // already received this year's code is reported as "already-sent".
+    let birthday_promo = "not-today";
+    try {
+      const grant = await grantBirthdayPromoIfDue({
+        _id: user._id,
+        email: user.email,
+        birthday: birthdayDate,
+      });
+      birthday_promo = grant.status;
+    } catch (err) {
+      birthday_promo = "failed";
+      console.error(`Birthday promo after admin update failed for ${user.email}:`, err?.message || err);
+    }
+
     return res.status(200).json({
       message: "Birthday updated successfully",
       user: {
@@ -430,6 +447,7 @@ export const updateUserBirthdayByEmail = async (req, res, next) => {
         previous_birthday: previousBirthday,
         birthday: toDateOnly(birthdayDate),
       },
+      birthday_promo,
     });
   } catch (error) {
     console.error("Update user birthday error:", error);

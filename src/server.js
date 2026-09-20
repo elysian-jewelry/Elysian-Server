@@ -15,12 +15,22 @@ const startServer = async () => {
   const { birthdayPromoCron } = await import(
     "./controllers/cron.controller.js"
   );
+  const { runBirthdayPromoJob } = await import(
+    "./services/birthdayPromo.service.js"
+  );
 
   const app = new App();
   await app.connectToDatabase();
   app.initializeMiddlewares();
   app.listen();
   birthdayPromoCron(); // ✅ Cron can run now
+
+  // A tick missed while the instance was down (deploy, restart) is not lost:
+  // the job is idempotent, so running it once at boot simply grants whoever
+  // is still owed today's code. Never blocks startup.
+  runBirthdayPromoJob().catch((err) =>
+    console.error("Birthday promo catch-up at startup failed:", err)
+  );
 };
 
 // Last-resort net. asyncHandler routes rejections from route handlers into
