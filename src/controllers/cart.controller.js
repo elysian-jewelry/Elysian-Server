@@ -3,6 +3,7 @@ import CartItem from "../models/cartItem.js";
 import Product from "../models/product.js";
 import ProductVariant from "../models/productVariant.js";
 import { MAX_CART_ITEM_QUANTITY } from "../validation/cart.validation.js";
+import { isValidPrice, unitPriceOf, toPiastres, toPounds } from "../utils/pricing.js";
 
 // Convert a Mongoose Map (or plain object) into a serializable plain object.
 const attrsToObject = (m) => {
@@ -39,17 +40,18 @@ export const addItemToCart = async (req, res, next) => {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    let cart = await Cart.findOne({ user_id }).populate("items");
-    if (!cart) {
-      cart = await Cart.create({ user_id, total_price: 0, items: [] });
-    }
-
     const variants = await ProductVariant.find({
       _id: { $in: product.product_variants },
     });
     const hasVariants = variants.length > 0;
 
-    let newCartItem = null;
+    // What this line is: which variant (or none), its price and stock, and
+    // the attribute snapshot stored on a new line.
+    let lineVariantId = null;
+    let price;
+    let stock;
+    let attributes;
+    let stockMessage;
 
     if (hasVariants) {
       if (!variant_id) {
@@ -65,35 +67,13 @@ export const addItemToCart = async (req, res, next) => {
           .json({ message: "Variant does not belong to the specified product" });
       }
 
-      const existingItem = await CartItem.findOne({
-        cart_id: cart._id,
-        product_id,
-        variant_id,
-      });
-
-      const totalQty = existingItem ? existingItem.quantity + qty : qty;
-      if (variant.stock_quantity < totalQty) {
-        return res
-          .status(400)
-          .json({ message: "Requested quantity exceeds available variant stock" });
-      }
-
-      if (existingItem) {
-        existingItem.quantity = totalQty;
-        await existingItem.save();
-        newCartItem = existingItem;
-      } else {
-        newCartItem = await CartItem.create({
-          cart_id: cart._id,
-          product_id,
-          variant_id,
-          // Snapshot the variant attributes so cart display works without a join.
-          attributes: attrsToObject(variant.attributes),
-          quantity: qty,
-          notes: sanitizedNotes,
-        });
-        cart.items.push(newCartItem._id);
-      }
+      lineVariantId = variant._id;
+      // Variant products are priced only by the variant, never the product.
+      price = variant.price;
+      stock = variant.stock_quantity;
+      // Snapshot the variant attributes so cart display works without a join.
+      attributes = attrsToObject(variant.attributes);
+      stockMessage = "Requested quantity exceeds available variant stock";
     } else {
       if (variant_id) {
         return res
@@ -101,88 +81,88 @@ export const addItemToCart = async (req, res, next) => {
           .json({ message: "This product does not support variants" });
       }
 
-      const existingItem = await CartItem.findOne({
-        cart_id: cart._id,
-        product_id,
-        variant_id: null,
-      });
-
-      const totalQty = existingItem ? existingItem.quantity + qty : qty;
-
-      if (product.stock_quantity < totalQty) {
-        return res
-          .status(400)
-          .json({ message: "Requested quantity exceeds available stock" });
-      }
-
-      if (existingItem) {
-        existingItem.quantity = totalQty;
-        await existingItem.save();
-        newCartItem = existingItem;
-      } else {
-        newCartItem = await CartItem.create({
-          cart_id: cart._id,
-          product_id,
-          variant_id: null,
-          quantity: qty,
-          notes: sanitizedNotes,
-        });
-        cart.items.push(newCartItem._id);
-      }
+      price = product.price;
+      stock = product.stock_quantity;
+      stockMessage = "Requested quantity exceeds available stock";
     }
 
-    await cart.save();
+    // Old data can still hold a missing or 0 price; don't let it into a cart.
+    if (!isValidPrice(price)) {
+      return res
+        .status(400)
+        .json({ message: "This item can't be added to the cart right now." });
+    }
 
-    // Recalculate total price
-    const items = await CartItem.find({ cart_id: cart._id }).populate({
-      path: "variant_id",
-      select: "price",
-    });
+    if (qty > stock) {
+      return res.status(400).json({ message: stockMessage });
+    }
 
-    const totalPrice = await Promise.all(
-      items.map(async (item) => {
-        if (item.variant_id && item.variant_id.price) {
-          return item.quantity * parseFloat(item.variant_id.price);
-        }
-        const fallbackProduct = await Product.findById(item.product_id).select(
-          "price"
-        );
-        return item.quantity * parseFloat(fallbackProduct.price);
-      })
+    // Get the user's cart, creating it on first use, in one atomic step. Two
+    // first adds at the same moment used to both try to create it, and one
+    // failed with a 500 on the unique user_id index.
+    const cart = await Cart.findOneAndUpdate(
+      { user_id },
+      { $setOnInsert: { total_price: 0 } },
+      { upsert: true, new: true }
     );
 
-    cart.total_price = totalPrice.reduce((sum, val) => sum + val, 0);
-    await cart.save();
+    // Add to the line for this product/option, or create it, in one atomic
+    // step. Together with the unique index on cart_items, two quick adds of
+    // the same item land on one line instead of creating two.
+    const line = await CartItem.findOneAndUpdate(
+      { cart_id: cart._id, product_id: product._id, variant_id: lineVariantId },
+      {
+        $inc: { quantity: qty },
+        $setOnInsert: { notes: sanitizedNotes, ...(attributes && { attributes }) },
+      },
+      { upsert: true, new: true }
+    );
 
-    return res.status(200).json({ message: "Product added to cart", cart });
+    // Over the stock or the per-line maximum now? Take back only what this
+    // request added, so concurrent adds can never push a line past the limit.
+    if (line.quantity > Math.min(stock, MAX_CART_ITEM_QUANTITY)) {
+      await CartItem.updateOne({ _id: line._id }, { $inc: { quantity: -qty } });
+      // Only reachable if the line was changed by another request in between.
+      await CartItem.deleteOne({ _id: line._id, quantity: { $lt: 1 } });
+      return res.status(400).json({
+        message:
+          line.quantity > stock
+            ? stockMessage
+            : `Quantity must not exceed ${MAX_CART_ITEM_QUANTITY}`,
+      });
+    }
+
+    // $addToSet keeps cart.items in sync without ever adding an id twice.
+    await Cart.updateOne({ _id: cart._id }, { $addToSet: { items: line._id } });
+
+    await recalculateCartTotal(cart._id);
+    const updatedCart = await Cart.findById(cart._id).populate("items");
+
+    return res.status(200).json({ message: "Product added to cart", cart: updatedCart });
   } catch (error) {
     console.error(error);
     return next(error);
   }
 };
 
-const recalculateCartTotal = async (cartId) => {
-  const cartItems = await CartItem.find({ cart_id: cartId });
+// The single place a cart's stored total is computed. Used by every cart
+// action, by checkout (after removing unavailable lines) and by admin
+// product/variant changes.
+//
+// Same pricing rule as checkout (utils/pricing.js): a variant line is priced
+// by its variant only. A line with no usable price — its variant or product
+// was deleted — counts as 0; checkout removes such lines.
+export const recalculateCartTotal = async (cartId) => {
+  const items = await CartItem.find({ cart_id: cartId })
+    .populate({ path: "variant_id", select: "price" })
+    .populate({ path: "product_id", select: "price" });
 
-  let total = 0;
+  const totalPiastres = items.reduce(
+    (sum, item) => sum + (toPiastres(unitPriceOf(item)) || 0) * item.quantity,
+    0
+  );
 
-  for (const item of cartItems) {
-    let price = 0;
-
-    if (item.variant_id) {
-      const variant = await ProductVariant.findById(item.variant_id).select(
-        "price"
-      );
-      price = variant?.price || 0;
-    } else if (item.product_id) {
-      const product = await Product.findById(item.product_id).select("price");
-      price = product?.price || 0;
-    }
-
-    total += item.quantity * parseFloat(price);
-  }
-
-  await Cart.findByIdAndUpdate(cartId, { total_price: total });
+  await Cart.findByIdAndUpdate(cartId, { total_price: toPounds(totalPiastres) });
 };
 
 // Increment item quantity
@@ -355,7 +335,8 @@ export const getUserCart = async (req, res, next) => {
           attributes,
           variant_description: variant?.description || "",
           notes: item.notes || null,
-          price: parseFloat(variant?.price || product.price || 0).toFixed(2),
+          // Variant lines show the variant's price only, never the product's.
+          price: (Number(unitPriceOf(item)) || 0).toFixed(2),
           product_id: product._id,
           product_name: product.name || null,
           product_type: product.type || null,

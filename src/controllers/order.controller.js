@@ -10,6 +10,8 @@ import PromoCode from "../models/promoCode.js";
 
 import GovOrderRate from "../models/govOrderRate.js";
 import { sendOrderConfirmationEmail } from "../middlewares/mailer.middleware.js";
+import { recalculateCartTotal } from "./cart.controller.js";
+import { isValidPrice, unitPriceOf, toPiastres, toPounds } from "../utils/pricing.js";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 dotenv.config();
@@ -116,12 +118,6 @@ export const validatePromoCode = async (req, res, next) => {
 // middle of one, so that the cart can't stay locked forever.
 const CHECKOUT_LOCK_MS = 2 * 60 * 1000;
 
-// Money is added up in whole piastres (1 EGP = 100 piastres), where integer
-// math is exact, and turned back into pounds only for storing and showing.
-// Plain float math stored totals like 559.9745 or 0.30000000000000004.
-const toPiastres = (amount) => Math.round(parseFloat(amount) * 100);
-const toPounds = (piastres) => piastres / 100;
-
 export const checkout = async (req, res, next) => {
   const lockedAt = new Date();
   let cart = null;
@@ -174,12 +170,49 @@ export const checkout = async (req, res, next) => {
       return res.status(400).json({ message: "Cart is empty." });
     }
 
-    const subtotalPiastres = cart.items.reduce((sum, item) => {
-      const price = item.variant_id
-        ? item.variant_id.price
-        : item.product_id.price;
-      return sum + toPiastres(price) * item.quantity;
-    }, 0);
+    // A line that can no longer be bought as it is gets removed, and the
+    // customer is asked to look at the cart again, instead of crashing with
+    // a 500 or charging the wrong price:
+    //   • its product was deleted;
+    //   • its chosen option (variant) was deleted — populated() still
+    //     returns the stored id when the variant it pointed to is gone;
+    //   • it has no option, but the product is now sold only by options
+    //     (variant products have no price of their own).
+    const unavailable = cart.items.filter(
+      (item) =>
+        !item.product_id ||
+        (item.populated("variant_id") && !item.variant_id) ||
+        (!item.variant_id && item.product_id.product_variants?.length > 0)
+    );
+    if (unavailable.length > 0) {
+      const unavailableIds = unavailable.map((i) => i._id);
+      await CartItem.deleteMany({ _id: { $in: unavailableIds } });
+      await Cart.updateOne(
+        { _id: cart._id },
+        { $pull: { items: { $in: unavailableIds } } }
+      );
+      await recalculateCartTotal(cart._id);
+      return res.status(409).json({
+        message:
+          "Some items in your cart are no longer available and were removed. Please review your cart and try again.",
+      });
+    }
+
+    // Every line needs a sellable price: the variant's own price for a
+    // variant line, the product's price otherwise (utils/pricing.js). Old
+    // data can still hold a missing or 0 price; refuse it rather than charge
+    // 0 or crash.
+    const unpriced = cart.items.find((item) => !isValidPrice(unitPriceOf(item)));
+    if (unpriced) {
+      return res.status(409).json({
+        message: `"${unpriced.product_id.name}" can't be purchased right now. Please remove it from your cart.`,
+      });
+    }
+
+    const subtotalPiastres = cart.items.reduce(
+      (sum, item) => sum + toPiastres(unitPriceOf(item)) * item.quantity,
+      0
+    );
     const subtotal = toPounds(subtotalPiastres);
 
     let discount = 0;
@@ -342,7 +375,8 @@ export const checkout = async (req, res, next) => {
           attributes,
           notes: item.notes || null,
           quantity: item.quantity,
-          price: item.variant_id?.price || item.product_id.price,
+          // Same rule as the subtotal, so the line matches what was charged.
+          price: unitPriceOf(item),
         };
       });
 
@@ -493,7 +527,7 @@ export const checkout = async (req, res, next) => {
         type: item.product_id.type,
         quantity: item.quantity,
         attributes: attributesOf(item),
-        price: item.variant_id?.price || item.product_id.price,
+        price: unitPriceOf(item),
       })),
       phone_number
     );

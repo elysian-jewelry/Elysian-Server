@@ -19,6 +19,10 @@ import { buildAttributesKey } from "../models/productVariant.js";
 import { invalidateAdminCache } from "../services/adminCache.service.js";
 import { BIRTHDAY_PATTERN } from "../validation/admin.validation.js";
 import { grantBirthdayPromoIfDue } from "../services/birthdayPromo.service.js";
+import { recalculateCartTotal } from "./cart.controller.js";
+import { isValidPrice } from "../utils/pricing.js";
+
+const VARIANT_PRICE_ERROR = "Each product variant must have a valid price greater than 0";
 import {
   getCategoryNameSet,
   invalidateCategoryCache,
@@ -58,32 +62,6 @@ function urlJoinEncoded(...parts) {
     .join("/")
     .replace(/\/{2,}/g, "/");
 }
-const looksPrimary = (f) =>
-  ["img_1", "main", "cover", "primary"].some((k) =>
-    f.toLowerCase().includes(k)
-  );
-
-function isValidHttpUrl(s) {
-  try {
-    const u = new URL(s);
-    return u.protocol === "http:" || u.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-/** Pick primary image index from URL list (filename hints), else 0 */
-function primaryImageIndexFromUrls(urls) {
-  let idx = urls.findIndex((url) => {
-    try {
-      return looksPrimary(path.basename(new URL(url).pathname));
-    } catch {
-      return false;
-    }
-  });
-  return idx >= 0 ? idx : 0;
-}
-
 function normalizeRemoveImageIds(value) {
   if (value === undefined || value === null || value === "") return [];
   if (Array.isArray(value)) {
@@ -1156,6 +1134,11 @@ export const deleteProductsByNameAndType = async (req, res, next) => {
         { _id: { $in: affectedCartIds } },
         { $pull: { items: { $in: orphanedIds } } }
       );
+      // Refresh each affected cart's stored total so it stops counting the
+      // deleted products (deleteVariant does the same for its carts).
+      for (const cartId of affectedCartIds) {
+        await recalculateCartTotal(cartId);
+      }
     }
 
     // 5️⃣ Delete products
@@ -1312,8 +1295,8 @@ export const addProductsWithVariants = async (req, res, next) => {
     if (Array.isArray(p.variants) && p.variants.length > 0) {
       const seenKeys = new Set();
       for (const v of p.variants) {
-        if (typeof v.price !== "number" || !Number.isFinite(v.price)) {
-          return res.status(400).json({ message: "Each variant must have a numeric price." });
+        if (!isValidPrice(v?.price)) {
+          return res.status(400).json({ message: VARIANT_PRICE_ERROR });
         }
         const attrs = sanitizeAttributes(v.attributes) || {};
         const err = validateVariantAttributes(attrs, optionType);
@@ -1345,9 +1328,18 @@ export const addProductsWithVariants = async (req, res, next) => {
     }
     p.image_urls = gcsUrls;
 
-    if (!p.name || !p.type || typeof p.price !== "number") {
+    if (!p.name || !p.type) {
       return res.status(400).json({
-        message: "Product must have name, type, and price (number)",
+        message: "Product must have name and type",
+      });
+    }
+
+    // A product with variants is priced only per variant (checked above) and
+    // has no price of its own. A product without variants must have one.
+    const hasVariants = Array.isArray(p.variants) && p.variants.length > 0;
+    if (!hasVariants && !isValidPrice(p.price)) {
+      return res.status(400).json({
+        message: "A product without variants must have a price greater than 0",
       });
     }
 
@@ -1387,7 +1379,7 @@ export const addProductsWithVariants = async (req, res, next) => {
     const product = await Product.create({
       name: p.name,
       description: p.description,
-      price: p.price,
+      price: hasVariants ? undefined : p.price,
       type: p.type,
       is_new: p.is_new,
       stock_quantity: p.stock_quantity,
@@ -1634,12 +1626,9 @@ export const updateProduct = async (req, res, next) => {
     });
   }
 
-  if (
-    price !== undefined &&
-    (typeof price !== "number" || !Number.isFinite(price))
-  ) {
+  if (price !== undefined && !isValidPrice(price)) {
     return res.status(400).json({
-      message: "price must be a finite number if provided.",
+      message: "price must be a number greater than 0 if provided.",
     });
   }
 
@@ -1649,19 +1638,20 @@ export const updateProduct = async (req, res, next) => {
     });
   }
 
-  if (
-    variant_price !== undefined &&
-    (typeof variant_price !== "number" || !Number.isFinite(variant_price))
-  ) {
-    return res.status(400).json({
-      message: "variant_price must be a finite number if provided.",
-    });
+  if (variant_price !== undefined && !isValidPrice(variant_price)) {
+    return res.status(400).json({ message: VARIANT_PRICE_ERROR });
   }
 
   if (add_variants !== undefined && !Array.isArray(add_variants)) {
     return res.status(400).json({
       message: "add_variants must be an array.",
     });
+  }
+
+  // Checked here, before anything is saved, so a bad variant price rejects
+  // the whole request instead of leaving it half applied.
+  if (Array.isArray(add_variants) && add_variants.some((v) => !isValidPrice(v?.price))) {
+    return res.status(400).json({ message: VARIANT_PRICE_ERROR });
   }
 
   try {
@@ -1796,26 +1786,9 @@ export const updateProduct = async (req, res, next) => {
             { $pull: { items: { $in: cartItemIds } } }
           );
 
+          // Shared total logic: variant lines are priced by the variant only.
           for (const cartId of cartIds) {
-            const cart = await Cart.findById(cartId).populate({
-              path: "items",
-              populate: [
-                { path: "product_id" },
-                { path: "variant_id" },
-              ],
-            });
-
-            if (!cart) continue;
-
-            cart.total_price = cart.items.reduce((sum, item) => {
-              const itemPrice =
-                item.variant_id?.price ??
-                item.product_id?.price ??
-                0;
-              return sum + itemPrice * item.quantity;
-            }, 0);
-
-            await cart.save();
+            await recalculateCartTotal(cartId);
           }
 
           carts_affected = cartIds.length;
@@ -1829,11 +1802,7 @@ export const updateProduct = async (req, res, next) => {
     if (Array.isArray(add_variants) && add_variants.length > 0) {
       const cleaned = [];
       for (const v of add_variants) {
-        if (typeof v.price !== "number" || !Number.isFinite(v.price)) {
-          return res.status(400).json({
-            message: "Each new variant must have a numeric price.",
-          });
-        }
+        // Prices were validated at the top of updateProduct.
         const attrs = sanitizeAttributes(v.attributes) || {};
         const err = validateVariantAttributes(attrs, product.option_type);
         if (err) return res.status(400).json({ message: err });
@@ -2041,6 +2010,17 @@ export const deleteVariant = async (req, res, next) => {
       return res.status(404).json({ message: "Variant not found." });
     }
 
+    // Removing the last variant turns this back into a product priced on its
+    // own, and variant products don't have a price of their own. Require one
+    // first so the product never ends up with no price at all.
+    const variantCount = await ProductVariant.countDocuments({ product_id: product._id });
+    if (variantCount <= 1 && !isValidPrice(product.price)) {
+      return res.status(400).json({
+        message:
+          "This is the product's last variant. Set a product price greater than 0 first, or delete the whole product.",
+      });
+    }
+
     // Remove from carts first
     const cartItemsToRemove = await CartItem.find({
       product_id: product._id,
@@ -2066,18 +2046,9 @@ export const deleteVariant = async (req, res, next) => {
         { $pull: { items: { $in: cartItemIds } } }
       );
 
+      // Shared total logic: variant lines are priced by the variant only.
       for (const cartId of cartIds) {
-        const cart = await Cart.findById(cartId).populate({
-          path: "items",
-          populate: [{ path: "product_id" }, { path: "variant_id" }],
-        });
-        if (!cart) continue;
-        cart.total_price = cart.items.reduce((sum, item) => {
-          const itemPrice =
-            item.variant_id?.price ?? item.product_id?.price ?? 0;
-          return sum + itemPrice * item.quantity;
-        }, 0);
-        await cart.save();
+        await recalculateCartTotal(cartId);
       }
 
       carts_affected = cartIds.length;
