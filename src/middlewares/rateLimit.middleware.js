@@ -38,3 +38,42 @@ export const authLimiter = rateLimit({
   skipSuccessfulRequests: false,
   handler: jsonMessage("Too many attempts. Try again in 15 minutes."),
 });
+
+/**
+ * Login codes per email address: 3 per hour.
+ *
+ * authLimiter is keyed on IP, so someone rotating IPs could still flood one
+ * inbox with codes. Keying on the address closes that. Only codes that were
+ * actually sent count — a request that fails is not held against the user.
+ */
+export const loginEmailLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 3,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  skipFailedRequests: true,
+  keyGenerator: (req) => String(req.body?.email ?? "").trim().toLowerCase(),
+  handler: jsonMessage("Too many codes requested for this email. Try again in an hour."),
+});
+
+/**
+ * Login codes for the whole store: 300 per day.
+ *
+ * Codes go out through a Gmail account, which stops sending after roughly
+ * 500 messages a day and may suspend an account that keeps hitting that
+ * limit. Without a store-wide ceiling, a few IPs requesting codes for random
+ * addresses could use up the quota, and then no login code, order receipt or
+ * birthday email would go out. Capping login mail well below the quota keeps
+ * the account healthy and leaves room for the other emails.
+ *
+ * Headers are off so the remaining store-wide budget is not advertised.
+ */
+export const loginDailyLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  limit: 300,
+  standardHeaders: false,
+  legacyHeaders: false,
+  skipFailedRequests: true,
+  keyGenerator: () => "all-login-codes",
+  handler: jsonMessage("Login is busy right now. Please try again later."),
+});
