@@ -7,8 +7,6 @@ const publicPaths = [
   "/auth/login",
   "/auth/verify-code-login",
   "/products",
-  "/users",
-  "/sync-images",
   "/images",
   "/track-visit",
 ];
