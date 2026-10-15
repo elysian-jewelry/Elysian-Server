@@ -135,36 +135,6 @@ export const trackVisit = async (req, res, next) => {
   }
 };
 
-/**
- * POST /admin/maintenance/backfill-visit-geo
- * Re-runs geo lookup for any visits stored as "Unknown" — useful for
- * old rows captured before geo detection was wired up correctly.
- */
-export const backfillVisitGeo = async (req, res, next) => {
-  try {
-    const limit = Math.min(parseInt(req.query.limit ?? "500", 10), 1000);
-    const unknownVisits = await Visit.find({
-      $or: [{ city: "Unknown" }, { country: "Unknown" }],
-    }).limit(limit);
-
-    let updated = 0;
-    for (const v of unknownVisits) {
-      // We don't have the original IP stored (only the fingerprint hash), so
-      // we can't backfill old rows. This endpoint stays here for future use
-      // if you add an `ip` field to the schema.
-      // For now, just count unknowns.
-      void v;
-    }
-    return res.status(200).json({
-      message: "Backfill skipped — IPs are not stored (privacy-preserving). New visits will be geo-tagged correctly.",
-      unknown_total: unknownVisits.length,
-      updated,
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
 export const getVisitStats = async (req, res, next) => {
   try {
     const { from, to } = req.query;
