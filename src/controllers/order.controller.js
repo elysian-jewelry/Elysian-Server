@@ -111,7 +111,21 @@ export const validatePromoCode = async (req, res, next) => {
 };
 
 
+// A checkout holds its cart for at most this long. A real checkout finishes
+// in well under a second; the limit only matters if the server dies in the
+// middle of one, so that the cart can't stay locked forever.
+const CHECKOUT_LOCK_MS = 2 * 60 * 1000;
+
+// Money is added up in whole piastres (1 EGP = 100 piastres), where integer
+// math is exact, and turned back into pounds only for storing and showing.
+// Plain float math stored totals like 559.9745 or 0.30000000000000004.
+const toPiastres = (amount) => Math.round(parseFloat(amount) * 100);
+const toPounds = (piastres) => piastres / 100;
+
 export const checkout = async (req, res, next) => {
+  const lockedAt = new Date();
+  let cart = null;
+
   try {
     const user_id = req.user.user_id;
     const {
@@ -125,7 +139,20 @@ export const checkout = async (req, res, next) => {
       last_name,
     } = req.body;
 
-    const cart = await Cart.findOne({ user_id }).populate({
+    // Step 1 — lock the cart. Only one checkout can run on a cart at a time,
+    // so two requests sent together (a double-click, or a script) can't both
+    // read the same cart and promo code and each place an order.
+    cart = await Cart.findOneAndUpdate(
+      {
+        user_id,
+        $or: [
+          { checkout_locked_at: null },
+          { checkout_locked_at: { $lt: new Date(lockedAt.getTime() - CHECKOUT_LOCK_MS) } },
+        ],
+      },
+      { $set: { checkout_locked_at: lockedAt } },
+      { new: true }
+    ).populate({
       path: "items",
       populate: [
         { path: "product_id", model: Product },
@@ -133,16 +160,27 @@ export const checkout = async (req, res, next) => {
       ],
     });
 
-    if (!cart || cart.items.length === 0) {
+    if (!cart) {
+      // Either the user has no cart, or another checkout is holding it.
+      if (await Cart.exists({ user_id })) {
+        return res.status(409).json({
+          message: "Your order is already being placed. Please wait a moment.",
+        });
+      }
       return res.status(400).json({ message: "Cart is empty." });
     }
 
-    const subtotal = cart.items.reduce((sum, item) => {
+    if (cart.items.length === 0) {
+      return res.status(400).json({ message: "Cart is empty." });
+    }
+
+    const subtotalPiastres = cart.items.reduce((sum, item) => {
       const price = item.variant_id
-        ? parseFloat(item.variant_id.price)
-        : parseFloat(item.product_id.price);
-      return sum + price * item.quantity;
+        ? item.variant_id.price
+        : item.product_id.price;
+      return sum + toPiastres(price) * item.quantity;
     }, 0);
+    const subtotal = toPounds(subtotalPiastres);
 
     let discount = 0;
     let promo = null;
@@ -186,40 +224,18 @@ export const checkout = async (req, res, next) => {
       return res.status(400).json({ message: "Invalid governorate ID." });
     }
 
-    const shipping_cost = govRate.cost;
+    const shippingPiastres = toPiastres(govRate.cost);
     const governorateName = govRate.name;
 
+    // The discount is rounded to the nearest piastre once, here, so the
+    // total is always a whole number of piastres.
+    const discountPiastres = Math.round((subtotalPiastres * discount) / 100);
+    const totalPiastres = subtotalPiastres - discountPiastres + shippingPiastres;
 
-    const total_amount = subtotal - subtotal * (discount / 100) + shipping_cost;
+    const shipping_cost = toPounds(shippingPiastres);
+    const total_amount = toPounds(totalPiastres);
     const subtotalInt = Math.round(subtotal);
     const totalInt = Math.round(total_amount);
-
-    const order = await Order.create({
-      user_id,
-      subtotal,
-      discount_percent: discount,
-      promo_code: promo ? promo.promo_code : null,
-      total_amount,
-      shipping_cost,
-      address,
-      apartment_no,
-      city,
-      governorate: governorateName,
-      phone_number,
-    });
-
-    // Build a map of product_id → primary image url so each order_item carries
-    // a snapshot that survives later product deletion.
-    const productIds = [...new Set(cart.items.map((i) => String(i.product_id._id)))];
-    const primaryImages = await ProductImage.find({
-      product_id: { $in: productIds },
-      is_primary: true,
-    })
-      .select("product_id image_url")
-      .lean();
-    const imageByProduct = new Map(
-      primaryImages.map((img) => [String(img.product_id), img.image_url])
-    );
 
     const attrsToObject = (m) => {
       if (!m) return {};
@@ -227,84 +243,170 @@ export const checkout = async (req, res, next) => {
       return { ...m };
     };
 
-    const orderItems = cart.items.map((item) => {
-      const attributes =
-        attrsToObject(item.attributes) ||
-        attrsToObject(item.variant_id?.attributes);
-      return {
-        order_id: order._id,
-        product_id: item.product_id._id,
-        variant_id: item.variant_id?._id || null,
-        product_name: item.product_id.name || null,
-        product_type: item.product_id.type || null,
-        product_image_url: imageByProduct.get(String(item.product_id._id)) || null,
-        attributes,
-        notes: item.notes || null,
-        quantity: item.quantity,
-        price: item.variant_id?.price || item.product_id.price,
-      };
-    });
+    // A cart line keeps its own copy of the variant's attributes. Lines added
+    // before that copy existed have an empty one, so fall back to the
+    // variant's attributes. (attrsToObject always returns an object, and {}
+    // is truthy, so `a || b` would never reach b.)
+    const attributesOf = (item) => {
+      const own = attrsToObject(item.attributes);
+      return Object.keys(own).length > 0
+        ? own
+        : attrsToObject(item.variant_id?.attributes);
+    };
 
-    await OrderItem.insertMany(orderItems);
+    // Step 2 — take the stock. Each line is one atomic database operation:
+    // "subtract N, but only if at least N are left". That re-checks stock at
+    // the moment of purchase, stops two checkouts from both taking the last
+    // piece, and never overwrites a stock edit an admin made meanwhile.
+    // Every line taken is remembered so it can be given back.
+    const taken = [];
+    const giveBackStock = async () => {
+      for (const t of taken) {
+        await t.Model.updateOne({ _id: t.id }, { $inc: { stock_quantity: t.quantity } })
+          .catch((err) =>
+            console.error(
+              `❌ Could not give back ${t.quantity} of ${t.Model.modelName} ${t.id}; fix its stock by hand:`,
+              err
+            )
+          );
+      }
+    };
 
-    // Track stock changes: variant/product id → remaining stock after this purchase.
-    const stockUpdates = [];
-    for (const item of cart.items) {
-      if (item.variant_id) {
-        item.variant_id.stock_quantity -= item.quantity;
-        await item.variant_id.save();
-        stockUpdates.push({
-          variant_id: item.variant_id._id,
-          product_id: null,
-          remaining: item.variant_id.stock_quantity,
+    let order = null;
+    try {
+      for (const item of cart.items) {
+        const Model = item.variant_id ? ProductVariant : Product;
+        const id = item.variant_id ? item.variant_id._id : item.product_id._id;
+
+        const updated = await Model.findOneAndUpdate(
+          { _id: id, stock_quantity: { $gte: item.quantity } },
+          { $inc: { stock_quantity: -item.quantity } },
+          { new: true }
+        ).lean();
+
+        if (!updated) {
+          await giveBackStock();
+          return res.status(409).json({
+            message: `Not enough stock left for "${item.product_id.name}". Please update your cart and try again.`,
+          });
+        }
+
+        taken.push({
+          Model,
+          id,
+          quantity: item.quantity,
+          // Used after the response to adjust other shoppers' carts.
+          variant_id: item.variant_id ? id : null,
+          product_id: item.variant_id ? null : id,
+          remaining: updated.stock_quantity,
         });
-      } else {
-        item.product_id.stock_quantity -= item.quantity;
-        await item.product_id.save();
-        stockUpdates.push({
-          variant_id: null,
+      }
+
+      // Step 3 — save the order and its items.
+      order = await Order.create({
+        user_id,
+        subtotal,
+        discount_percent: discount,
+        promo_code: promo ? promo.promo_code : null,
+        total_amount,
+        shipping_cost,
+        address,
+        apartment_no,
+        city,
+        governorate: governorateName,
+        phone_number,
+      });
+
+      // Build a map of product_id → primary image url so each order_item carries
+      // a snapshot that survives later product deletion.
+      const productIds = [...new Set(cart.items.map((i) => String(i.product_id._id)))];
+      const primaryImages = await ProductImage.find({
+        product_id: { $in: productIds },
+        is_primary: true,
+      })
+        .select("product_id image_url")
+        .lean();
+      const imageByProduct = new Map(
+        primaryImages.map((img) => [String(img.product_id), img.image_url])
+      );
+
+      const orderItems = cart.items.map((item) => {
+        const attributes = attributesOf(item);
+        return {
+          order_id: order._id,
           product_id: item.product_id._id,
-          remaining: item.product_id.stock_quantity,
-        });
+          variant_id: item.variant_id?._id || null,
+          product_name: item.product_id.name || null,
+          product_type: item.product_id.type || null,
+          product_image_url: imageByProduct.get(String(item.product_id._id)) || null,
+          attributes,
+          notes: item.notes || null,
+          quantity: item.quantity,
+          price: item.variant_id?.price || item.product_id.price,
+        };
+      });
+
+      await OrderItem.insertMany(orderItems);
+    } catch (err) {
+      // Saving failed, so undo it completely: give the stock back and remove
+      // any half-saved order. The cart and promo code haven't been touched
+      // yet, so the customer can simply try again.
+      await giveBackStock();
+      if (order) {
+        await OrderItem.deleteMany({ order_id: order._id }).catch((e) =>
+          console.error(`❌ Could not remove items of half-saved order ${order._id}:`, e)
+        );
+        await Order.deleteOne({ _id: order._id }).catch((e) =>
+          console.error(`❌ Could not remove half-saved order ${order._id}:`, e)
+        );
+      }
+      throw err;
+    }
+
+    // Step 4 — finish: mark the promo code used, then empty the cart (which
+    // also releases the lock). The order is already saved, so if one of these
+    // fails it is logged and the customer is still told the order went
+    // through. Telling them it failed would make them order again.
+    if (promo_code && promo && discount > 0) {
+      try {
+        if (promo.is_public) {
+          // Push user ID to used_by array
+          await PromoCode.updateOne(
+            { _id: promo._id },
+            { $addToSet: { used_by: user_id } }
+          );
+        } else {
+          // Delete private (birthday) promo after use
+          await PromoCode.deleteOne({ _id: promo._id });
+        }
+      } catch (err) {
+        console.error(
+          `❌ Order ${order._id} was placed, but promo ${promo.promo_code} could not be marked as used:`,
+          err
+        );
       }
     }
 
-    // Adjust other users' carts: remove items at zero stock, cap quantities to remaining stock.
-    for (const { variant_id, product_id, remaining } of stockUpdates) {
-      const filter = { cart_id: { $ne: cart._id } };
-      if (variant_id) {
-        filter.variant_id = variant_id;
-      } else {
-        filter.product_id = product_id;
-        filter.variant_id = null;
-      }
-
-      if (remaining <= 0) {
-        const staleItems = await CartItem.find(filter).select("_id cart_id");
-        if (staleItems.length > 0) {
-          const staleIds = staleItems.map((ci) => ci._id);
-          const affectedCartIds = [...new Set(staleItems.map((ci) => String(ci.cart_id)))];
-          await CartItem.deleteMany({ _id: { $in: staleIds } });
-          await Cart.updateMany(
-            { _id: { $in: affectedCartIds } },
-            { $pull: { items: { $in: staleIds } } }
-          );
+    // $pull only the lines that were bought, so anything added to the cart
+    // while this checkout was running stays in it.
+    const boughtIds = cart.items.map((i) => i._id);
+    try {
+      await CartItem.deleteMany({ _id: { $in: boughtIds } });
+      await Cart.updateOne(
+        { _id: cart._id },
+        {
+          $pull: { items: { $in: boughtIds } },
+          $set: { total_price: 0, checkout_locked_at: null },
         }
-      } else {
-        // Cap quantity to remaining stock for any cart item that exceeds it.
-        await CartItem.updateMany(
-          { ...filter, quantity: { $gt: remaining } },
-          { $set: { quantity: remaining } }
-        );
-      }
+      );
+    } catch (err) {
+      console.error(`❌ Order ${order._id} was placed, but the cart could not be emptied:`, err);
     }
 
     const shortOrderId = order._id.toString().slice(-5); // e.g., 'bb3f0'
 
     const renderAttrs = (item) => {
-      const a =
-        attrsToObject(item.attributes) ||
-        attrsToObject(item.variant_id?.attributes);
+      const a = attributesOf(item);
       return Object.entries(a)
         .map(([k, v]) => `${k}: ${v}`)
         .join(", ");
@@ -327,8 +429,56 @@ export const checkout = async (req, res, next) => {
       new Date().toLocaleString(),
     ]);
 
-    await updateGoogleSheet(sheetData);
+    res.status(201).json({ message: "Order placed successfully.", order });
 
+    // Step 5 — after the response. The order is safe in the database, so the
+    // extras below are best effort: a failure is logged with the order id and
+    // never fails or undoes the order.
+
+    // Adjust other users' carts: remove items at zero stock, cap quantities to remaining stock.
+    try {
+      for (const { variant_id, product_id, remaining } of taken) {
+        const filter = { cart_id: { $ne: cart._id } };
+        if (variant_id) {
+          filter.variant_id = variant_id;
+        } else {
+          filter.product_id = product_id;
+          filter.variant_id = null;
+        }
+
+        if (remaining <= 0) {
+          const staleItems = await CartItem.find(filter).select("_id cart_id");
+          if (staleItems.length > 0) {
+            const staleIds = staleItems.map((ci) => ci._id);
+            const affectedCartIds = [...new Set(staleItems.map((ci) => String(ci.cart_id)))];
+            await CartItem.deleteMany({ _id: { $in: staleIds } });
+            await Cart.updateMany(
+              { _id: { $in: affectedCartIds } },
+              { $pull: { items: { $in: staleIds } } }
+            );
+          }
+        } else {
+          // Cap quantity to remaining stock for any cart item that exceeds it.
+          await CartItem.updateMany(
+            { ...filter, quantity: { $gt: remaining } },
+            { $set: { quantity: remaining } }
+          );
+        }
+      }
+    } catch (err) {
+      console.error(`❌ Order ${order._id}: adjusting other carts failed:`, err);
+    }
+
+    try {
+      await updateGoogleSheet(sheetData);
+    } catch (err) {
+      console.error(
+        `❌ Order ${order._id} was placed but NOT added to the Google Sheet; add it by hand:`,
+        err
+      );
+    }
+
+    // Logs its own failures and never throws.
     await sendOrderConfirmationEmail(
       req.user.email,
       first_name,
@@ -342,40 +492,26 @@ export const checkout = async (req, res, next) => {
         name: item.product_id.name,
         type: item.product_id.type,
         quantity: item.quantity,
-        attributes:
-          attrsToObject(item.attributes) ||
-          attrsToObject(item.variant_id?.attributes),
+        attributes: attributesOf(item),
         price: item.variant_id?.price || item.product_id.price,
       })),
       phone_number
     );
-
-    if (promo_code && promo && discount > 0) {
-      if (promo.is_public) {
-        // Push user ID to used_by array
-        await PromoCode.updateOne(
-          { _id: promo._id },
-          { $addToSet: { used_by: user_id } }
-        );
-      } else {
-        // Delete private (birthday) promo after use
-        await PromoCode.deleteOne({
-          _id: promo._id,
-        });
-      }
-    }
-
-    await CartItem.deleteMany({ _id: { $in: cart.items.map((i) => i._id) } });
-    cart.items = [];
-    cart.total_price = 0;
-    await cart.save();
-
-    return res
-      .status(201)
-      .json({ message: "Order placed successfully.", order });
   } catch (error) {
     console.error("❌ Checkout Error:", error);
-    return res.status(500).json({ message: "Internal Server Error" });
+    if (!res.headersSent) {
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
+  } finally {
+    // Release the lock if this checkout still holds it (on success it was
+    // already released when the cart was emptied). Matching on lockedAt means
+    // this never releases a lock that a later checkout has taken over.
+    if (cart) {
+      await Cart.updateOne(
+        { _id: cart._id, checkout_locked_at: lockedAt },
+        { $set: { checkout_locked_at: null } }
+      ).catch((err) => console.error("❌ Could not release cart lock:", err));
+    }
   }
 };
 

@@ -18,6 +18,12 @@ const cartSchema = new mongoose.Schema(
         ref: "CartItem",
       },
     ],
+    // Set while a checkout is running on this cart, so a second checkout
+    // sent at the same moment is turned away instead of ordering twice.
+    checkout_locked_at: {
+      type: Date,
+      default: null,
+    },
   },
   {
     collection: "carts",
