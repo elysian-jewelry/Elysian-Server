@@ -123,7 +123,7 @@ const hasDiscount = discount && discount > 0;
 
 // Contact details in a simple clean text layout
 const contactDetailsHtml = `
-  <div style="margin: 20px 0 8px; font-size: 14px; color: #111; line-height: 1.7; text-align: left;">
+  <div style="margin: 20px 0 8px; font-size: 14px; color: #111; line-height: 1.7; text-align: center;">
     <p style="margin: 0 0 10px;">
       <strong>Delivery Address:</strong><br>
       ${deliveryAddressHtml(address)}
