@@ -12,6 +12,7 @@ import GovOrderRate from "../models/govOrderRate.js";
 import { sendOrderConfirmationEmail } from "../middlewares/mailer.middleware.js";
 import { recalculateCartTotal } from "./cart.controller.js";
 import { isValidPrice, unitPriceOf, toPiastres, toPounds } from "../utils/pricing.js";
+import { formatOrderAddress } from "../utils/address.js";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 dotenv.config();
@@ -125,15 +126,28 @@ export const checkout = async (req, res, next) => {
   try {
     const user_id = req.user.user_id;
     const {
-      address,
-      apartment_no,
-      city,
       governorate,
       phone_number,
       promo_code,
       first_name,
       last_name,
     } = req.body;
+
+    // checkoutSchema has already checked these; it doesn't write its trimmed
+    // values back to req.body, so they're trimmed here before being saved.
+    const text = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
+    const { location } = req.body;
+    const delivery = {
+      address: text(req.body.address), // the street line
+      building_no: text(req.body.building_no),
+      floor_no: text(req.body.floor_no),
+      apartment_no: text(req.body.apartment_no),
+      landmark: text(req.body.landmark),
+      city: text(req.body.city),
+      location: location
+        ? { lat: Number(location.lat), lng: Number(location.lng) }
+        : undefined,
+    };
 
     // Step 1 — lock the cart. Only one checkout can run on a cart at a time,
     // so two requests sent together (a double-click, or a script) can't both
@@ -343,9 +357,7 @@ export const checkout = async (req, res, next) => {
         promo_code: promo ? promo.promo_code : null,
         total_amount,
         shipping_cost,
-        address,
-        apartment_no,
-        city,
+        ...delivery,
         governorate: governorateName,
         phone_number,
       });
@@ -446,6 +458,10 @@ export const checkout = async (req, res, next) => {
         .join(", ");
     };
 
+    const deliveryAddress = formatOrderAddress({ ...delivery, governorate: governorateName });
+
+    // Columns A–N are unchanged; the map link was added at the end (O) so
+    // the existing columns in the operations sheet don't move.
     const sheetData = cart.items.map((item) => [
       shortOrderId,
       `${first_name} ${last_name}`,
@@ -453,7 +469,7 @@ export const checkout = async (req, res, next) => {
       item.product_id.name,
       item.quantity,
       renderAttrs(item) || null,
-      `${address}, ${apartment_no}, ${city}, ${governorateName}`,
+      deliveryAddress.full,
       phone_number,
       "Pending",
       totalInt,
@@ -461,6 +477,7 @@ export const checkout = async (req, res, next) => {
       subtotalInt,
       shipping_cost,
       new Date().toLocaleString(),
+      deliveryAddress.mapUrl,
     ]);
 
     res.status(201).json({ message: "Order placed successfully.", order });
@@ -517,7 +534,7 @@ export const checkout = async (req, res, next) => {
       req.user.email,
       first_name,
       last_name,
-      `${address}, ${apartment_no}, ${city}, ${governorateName}`,
+      deliveryAddress,
       discount,
       subtotal,
       shipping_cost,
@@ -597,7 +614,7 @@ const updateGoogleSheet = async (sheetData) => {
     const sheets = google.sheets({ version: "v4", auth: authClient });
 
     const spreadsheetId = process.env.GOOGLE_SPREAD_SHEET_ID; // from .env file
-    const range = "Sheet1!A2:N"; // Adjust the range to start from row 2 downwards
+    const range = "Sheet1!A2:O"; // Adjust the range to start from row 2 downwards
 
     // Every cell is customer-controlled text (name, address, notes), so the
     // sheet must not interpret any of it. RAW stores values verbatim;
@@ -672,17 +689,23 @@ export const getUserOrders = async (req, res, next) => {
 
     const formattedOrders = orders.map((order) => {
       const discountPercent = order.discount_percent ?? 0;
+      const formatted = formatOrderAddress(order);
 
       return {
         order_id: order._id,
         order_date: order.order_date,
         status: order.status,
         shipping_address: {
-          address: order.address,
+          address: order.address, // the street line
+          building_no: order.building_no ?? null,
+          floor_no: order.floor_no ?? null,
           apartment_no: order.apartment_no,
+          landmark: order.landmark ?? null,
           city: order.city,
           governorate: order.governorate,
-          full: `${order.address}, ${order.apartment_no}, ${order.city}, ${order.governorate}`,
+          location: order.location ?? null,
+          map_url: formatted.mapUrl,
+          full: formatted.full,
         },
         contact_number: order.phone_number,
         subtotal: order.subtotal,

@@ -8,9 +8,8 @@ import Joi from "joi";
 // forge extra visual rows in the operations sheet, so they are rejected here.
 //
 // \p{L}/\p{M} cover letters and combining marks in every script, so Arabic
-// names and addresses are accepted. The client form currently applies no
-// character rule at all to address/apartment/city, so anything stricter than
-// this would reject orders the checkout page happily submits.
+// names and addresses are accepted. The checkout form applies this same rule
+// to every address field (Payment.tsx), so keep the two in step.
 //
 // \p{P} is all punctuation in any script — ASCII "," "." "-" "/" "#" "&" "()"
 // as well as the Arabic comma "،" — but NOT the math symbols "=" and "+",
@@ -29,18 +28,63 @@ const TEXT_PATTERN = /^(?![=+\-@])[\p{L}\p{M}\p{N}\p{P}\p{Zs}]+$/u;
 // satisfying min(2). It does not mutate req.body: the shared validate()
 // middleware keeps only `error` and discards the converted value.
 
+// Roughly Egypt's bounding box. The store only delivers in Egypt, so a pin
+// outside it is a mistake or a hand-made request.
+const EGYPT_LAT = { min: 21.5, max: 32 };
+const EGYPT_LNG = { min: 24.5, max: 37.5 };
+
+// Checkouts from the current site send the map pin (`location`) together
+// with building and floor. A page opened before that release sends neither,
+// so those fields are only required once a pin is present; that keeps
+// customers mid-checkout during a deploy from being rejected.
+const requiredWithPin = (schema) =>
+  schema.when("location", { is: Joi.exist(), then: Joi.required(), otherwise: Joi.optional() });
+
 export const checkoutSchema = Joi.object({
+  // The street line.
   address: Joi.string().trim().min(5).max(200).pattern(TEXT_PATTERN).required().messages({
-    "string.empty": "Address cannot be empty",
-    "string.min": "Address should be at least 5 characters",
-    "string.max": "Address must not exceed 200 characters",
-    "string.pattern.base": "Address contains characters that are not allowed",
+    "string.empty": "Street name cannot be empty",
+    "string.min": "Street name should be at least 5 characters",
+    "string.max": "Street name must not exceed 200 characters",
+    "string.pattern.base": "Street name contains characters that are not allowed",
+  }),
+  building_no: requiredWithPin(
+    Joi.string().trim().min(1).max(50).pattern(TEXT_PATTERN)
+  ).messages({
+    "any.required": "Building number is required",
+    "string.empty": "Building number cannot be empty",
+    "string.max": "Building number must not exceed 50 characters",
+    "string.pattern.base": "Building number contains characters that are not allowed",
+  }),
+  floor_no: requiredWithPin(
+    Joi.string().trim().min(1).max(20).pattern(TEXT_PATTERN)
+  ).messages({
+    "any.required": "Floor is required",
+    "string.empty": "Floor cannot be empty",
+    "string.max": "Floor must not exceed 20 characters",
+    "string.pattern.base": "Floor contains characters that are not allowed",
   }),
   apartment_no: Joi.string().trim().min(1).max(100).pattern(TEXT_PATTERN).required().messages({
     "string.empty": "Apartment number cannot be empty",
     "string.max": "Apartment number must not exceed 100 characters",
     "string.pattern.base": "Apartment number contains characters that are not allowed",
   }),
+  landmark: Joi.string().trim().max(150).pattern(TEXT_PATTERN).allow("", null).optional().messages({
+    "string.max": "Landmark must not exceed 150 characters",
+    "string.pattern.base": "Landmark contains characters that are not allowed",
+  }),
+  location: Joi.object({
+    lat: Joi.number().min(EGYPT_LAT.min).max(EGYPT_LAT.max).required(),
+    lng: Joi.number().min(EGYPT_LNG.min).max(EGYPT_LNG.max).required(),
+  })
+    .optional()
+    .messages({
+      "number.base": "The delivery pin must have numeric coordinates",
+      "number.min": "The delivery pin must be inside Egypt",
+      "number.max": "The delivery pin must be inside Egypt",
+      "any.required": "The delivery pin needs both latitude and longitude",
+      "object.unknown": "The delivery pin may only contain lat and lng",
+    }),
   city: Joi.string().trim().min(2).max(100).pattern(TEXT_PATTERN).required().messages({
     "string.empty": "City cannot be empty",
     "string.min": "City should be at least 2 characters",

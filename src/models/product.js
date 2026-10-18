@@ -55,6 +55,25 @@ const productSchema = new mongoose.Schema(
   }
 );
 
+// A product is identified everywhere by (name, type) — edits, sort order,
+// variant deletes, product deletes and its Cloud Storage folder all look it
+// up that way — so two products may never share a name within a category.
+// The controllers check first for a clear error message; this index is what
+// makes it hold even for two requests at the same moment.
+productSchema.index({ name: 1, type: 1 }, { unique: true });
+
 const Product = mongoose.model("Product", productSchema);
+
+// If the collection already holds duplicate (name, type) pairs, MongoDB
+// refuses to build the index. Nothing breaks, but say so loudly so the
+// duplicates get renamed.
+Product.on("index", (err) => {
+  if (err) {
+    console.error(
+      "❌ products unique (name, type) index was not built — rename duplicate products, then restart:",
+      err.message
+    );
+  }
+});
 
 export default Product;

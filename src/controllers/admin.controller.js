@@ -1502,9 +1502,13 @@ export const getAllOrdersFull = async (req, res, next) => {
           total_amount: 1,
           shipping_cost: 1,
           address: 1,
+          building_no: 1,
+          floor_no: 1,
           apartment_no: 1,
+          landmark: 1,
           city: 1,
           governorate: 1,
+          location: 1,
           phone_number: 1,
           status: 1,
           items: 1,
@@ -1660,8 +1664,22 @@ export const updateProduct = async (req, res, next) => {
       return res.status(404).json({ message: "Product not found." });
     }
 
+    // A rename must not take a name another product in this category already
+    // has: everything finds a product by (name, type), so two would become
+    // indistinguishable. Checked before anything is saved, so a refused
+    // rename changes nothing.
+    const renameTo = new_name !== undefined ? new_name.trim() : undefined;
+    if (renameTo !== undefined && renameTo !== product.name) {
+      const taken = await Product.exists({ name: renameTo, type, _id: { $ne: product._id } });
+      if (taken) {
+        return res.status(409).json({
+          message: `A product named "${renameTo}" already exists in ${type}. Choose a different name.`,
+        });
+      }
+    }
+
     // 1️⃣ Update product-level fields
-    if (new_name !== undefined) product.name = new_name.trim();
+    if (renameTo !== undefined) product.name = renameTo;
     if (product_description !== undefined) product.description = String(product_description).trim();
     if (product_quantity !== undefined)
       product.stock_quantity = product_quantity;
@@ -1959,8 +1977,13 @@ export const updateProduct = async (req, res, next) => {
     console.error("Error updating product:", error);
 
     if (error.code === 11000) {
+      // Two unique indexes can fire here: the product's (name, type) — a
+      // rename racing another rename or create — or a variant's attributes.
+      const nameClash = Boolean(error.keyPattern?.name);
       return res.status(409).json({
-        message: "Duplicate variant (same size/color already exists)."
+        message: nameClash
+          ? "A product with this name already exists in this category. Choose a different name."
+          : "Duplicate variant (same size/color already exists)."
       });
     }
 

@@ -51,6 +51,34 @@ export const sendVerificationCodeEmail = async (email, verificationCode) => {
 };
 
 
+/** Customer-typed text, made safe to place inside the email's HTML. */
+const escapeHtml = (s) =>
+  String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+/** The delivery address block, one part per line, plus the map link. */
+const deliveryAddressHtml = (address) => {
+  const lines = [
+    address.street,
+    address.unit,
+    address.area,
+    address.landmark && `Landmark: ${address.landmark}`,
+  ].filter(Boolean);
+  if (lines.length === 0) return "-";
+  const mapLink = address.mapUrl
+    ? `<br><a href="${escapeHtml(address.mapUrl)}" style="color: #ff4d88; font-weight: 600;">📍 View your pin on Google Maps</a>`
+    : "";
+  return lines.map(escapeHtml).join("<br>") + mapLink;
+};
+
+/**
+ * @param address the delivery address from formatOrderAddress()
+ *   (utils/address.js): { street, unit, area, landmark, mapUrl, full }
+ */
 export const sendOrderConfirmationEmail = async (
   email,
   first_name,
@@ -96,8 +124,9 @@ const hasDiscount = discount && discount > 0;
 // Contact details in a simple clean text layout
 const contactDetailsHtml = `
   <div style="margin: 20px 0 8px; font-size: 14px; color: #111; line-height: 1.7; text-align: left;">
-    <p style="margin: 0 0 6px;">
-      <strong>Shipping Address:</strong> ${address || "-"}
+    <p style="margin: 0 0 10px;">
+      <strong>Delivery Address:</strong><br>
+      ${deliveryAddressHtml(address)}
     </p>
     <p style="margin: 0;">
       <strong>Contact Number:</strong>

@@ -33,13 +33,39 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       default: 0.0,
     },
+    // The street line, e.g. "Sakleya Street".
     address: {
       type: String,
       required: true,
     },
+    // building_no, floor_no, landmark and location are empty on orders
+    // placed before checkout asked for them.
+    building_no: {
+      type: String,
+      default: null,
+    },
+    floor_no: {
+      type: String,
+      default: null,
+    },
     apartment_no: {
       type: String,
       required: true,
+    },
+    landmark: {
+      type: String,
+      default: null,
+    },
+    // Where the customer pinned the delivery on the checkout map.
+    location: {
+      type: new mongoose.Schema(
+        {
+          lat: { type: Number, required: true, min: -90, max: 90 },
+          lng: { type: Number, required: true, min: -180, max: 180 },
+        },
+        { _id: false }
+      ),
+      default: undefined,
     },
     city: {
       type: String,
