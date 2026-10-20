@@ -50,11 +50,16 @@ const cartItemSchema = new mongoose.Schema(
   }
 );
 
-// One line per product/option in a cart. addItemToCart relies on this to add
-// to an existing line atomically, so two quick adds of the same item end up
-// on one line instead of two. (variant_id is null for products without
-// variants; the index treats those nulls as equal, which is what we want.)
-cartItemSchema.index({ cart_id: 1, product_id: 1, variant_id: 1 }, { unique: true });
+// One line per product/option/note in a cart. addItemToCart relies on this to
+// add to an existing line atomically, so two quick adds of the same item end
+// up on one line instead of two. The note is part of the key so the same
+// custom-size option in two different sizes stays on two lines. (variant_id
+// and notes are null when unused; the index treats those nulls as equal,
+// which is what we want.)
+cartItemSchema.index(
+  { cart_id: 1, product_id: 1, variant_id: 1, notes: 1 },
+  { unique: true }
+);
 
 const CartItem = mongoose.model("CartItem", cartItemSchema);
 
@@ -69,5 +74,20 @@ CartItem.on("index", (err) => {
     );
   }
 });
+
+// The key used to be product/option only. MongoDB keeps an index until it is
+// dropped, and that one would refuse a second size of the same custom option,
+// so drop it once the new index is built. Every later start finds nothing to
+// drop, which is fine.
+const OLD_LINE_INDEX = "cart_id_1_product_id_1_variant_id_1";
+CartItem.init()
+  .catch(() => {}) // a failed build is already reported by the listener above
+  .then(() => CartItem.collection.dropIndex(OLD_LINE_INDEX))
+  .then(() => console.log(`✅ Dropped old cart_items index ${OLD_LINE_INDEX}`))
+  .catch((err) => {
+    // 27 IndexNotFound / 26 NamespaceNotFound: already gone, nothing to do.
+    if (err?.code === 27 || err?.code === 26) return;
+    console.error(`❌ Could not drop old cart_items index ${OLD_LINE_INDEX}:`, err.message);
+  });
 
 export default CartItem;

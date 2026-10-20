@@ -12,6 +12,20 @@ const attrsToObject = (m) => {
   return { ...m };
 };
 
+// How many of one product or option a cart holds, over all its lines. The
+// same custom-size option can sit on several lines (one per size), and they
+// all draw on the same stock. `exceptLineId` leaves one line out.
+const quantityInCart = async (cartId, productId, variantId, exceptLineId = null) => {
+  const lines = await CartItem.find({
+    cart_id: cartId,
+    ...(variantId ? { variant_id: variantId } : { product_id: productId, variant_id: null }),
+    ...(exceptLineId && { _id: { $ne: exceptLineId } }),
+  })
+    .select("quantity")
+    .lean();
+  return lines.reduce((sum, line) => sum + line.quantity, 0);
+};
+
 export const addItemToCart = async (req, res, next) => {
   try {
     const { product_id, variant_id, quantity, notes } = req.body;
@@ -106,27 +120,38 @@ export const addItemToCart = async (req, res, next) => {
       { upsert: true, new: true }
     );
 
-    // Add to the line for this product/option, or create it, in one atomic
-    // step. Together with the unique index on cart_items, two quick adds of
-    // the same item land on one line instead of creating two.
+    // Add to the line for this product/option/note, or create it, in one
+    // atomic step. Together with the unique index on cart_items, two quick
+    // adds of the same item land on one line instead of creating two. The
+    // note is part of the line, so a second custom size gets a line of its
+    // own instead of raising the first size's quantity.
     const line = await CartItem.findOneAndUpdate(
-      { cart_id: cart._id, product_id: product._id, variant_id: lineVariantId },
+      {
+        cart_id: cart._id,
+        product_id: product._id,
+        variant_id: lineVariantId,
+        notes: sanitizedNotes,
+      },
       {
         $inc: { quantity: qty },
-        $setOnInsert: { notes: sanitizedNotes, ...(attributes && { attributes }) },
+        ...(attributes && { $setOnInsert: { attributes } }),
       },
       { upsert: true, new: true }
     );
 
-    // Over the stock or the per-line maximum now? Take back only what this
-    // request added, so concurrent adds can never push a line past the limit.
-    if (line.quantity > Math.min(stock, MAX_CART_ITEM_QUANTITY)) {
+    // Over the stock or the per-line maximum now? Stock is shared by every
+    // line of this product/option (one per custom size), so count them all.
+    // Take back only what this request added, so concurrent adds can never
+    // push the cart past the limit.
+    const inCart = await quantityInCart(cart._id, product._id, lineVariantId);
+    if (inCart > stock || line.quantity > MAX_CART_ITEM_QUANTITY) {
       await CartItem.updateOne({ _id: line._id }, { $inc: { quantity: -qty } });
-      // Only reachable if the line was changed by another request in between.
+      // Removes the line this request just created, or one that another
+      // request emptied in between.
       await CartItem.deleteOne({ _id: line._id, quantity: { $lt: 1 } });
       return res.status(400).json({
         message:
-          line.quantity > stock
+          inCart > stock
             ? stockMessage
             : `Quantity must not exceed ${MAX_CART_ITEM_QUANTITY}`,
       });
@@ -190,8 +215,13 @@ export const incrementCartItem = async (req, res, next) => {
       });
     }
 
+    // Other lines of the same product/option (other custom sizes) draw on
+    // the same stock, so they count too.
     if (item.variant_id) {
-      if (item.variant_id.stock_quantity < quantityAfterIncrement) {
+      const inOtherLines = await quantityInCart(
+        item.cart_id._id, null, item.variant_id._id, item._id
+      );
+      if (item.variant_id.stock_quantity < inOtherLines + quantityAfterIncrement) {
         return res
           .status(400)
           .json({ message: "Not enough variant stock available" });
@@ -199,7 +229,10 @@ export const incrementCartItem = async (req, res, next) => {
     } else {
       const product = item.product_id;
       if (!product) return res.status(500).json({ message: "Product not found" });
-      if (product.stock_quantity < quantityAfterIncrement) {
+      const inOtherLines = await quantityInCart(
+        item.cart_id._id, product._id, null, item._id
+      );
+      if (product.stock_quantity < inOtherLines + quantityAfterIncrement) {
         return res.status(400).json({ message: "Not enough stock available" });
       }
     }

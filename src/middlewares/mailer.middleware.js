@@ -94,13 +94,14 @@ export const sendOrderConfirmationEmail = async (
   const titleCase = (s) =>
     String(s || "").replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const renderOptions = (attrs) => {
-    if (!attrs) return "-";
-    const entries = Object.entries(attrs).filter(([, v]) => v != null && String(v).trim());
-    if (entries.length === 0) return "-";
-    return entries
-      .map(([k, v]) => `<strong>${titleCase(k)}:</strong> ${v}`)
-      .join(" &middot; ");
+  // The chosen options, then the custom size exactly as the customer typed
+  // it (escaped: it is free text).
+  const renderOptions = (attrs, notes) => {
+    const parts = Object.entries(attrs || {})
+      .filter(([, v]) => v != null && String(v).trim())
+      .map(([k, v]) => `<strong>${titleCase(k)}:</strong> ${v}`);
+    if (notes) parts.push(`<strong>Custom Size:</strong> ${escapeHtml(notes)}`);
+    return parts.length > 0 ? parts.join(" &middot; ") : "-";
   };
 
   // Build product rows
@@ -111,7 +112,7 @@ export const sendOrderConfirmationEmail = async (
         <td style="padding: 10px; text-align: center;">${item.name}</td>
         <td style="padding: 10px; text-align: center;">${item.type}</td>
         <td style="padding: 10px; text-align: center;">${item.quantity}</td>
-        <td style="padding: 10px; text-align: center;">${renderOptions(item.attributes)}</td>
+        <td style="padding: 10px; text-align: center;">${renderOptions(item.attributes, item.notes)}</td>
         <td style="padding: 10px; text-align: center;">${item.price} EGP</td>
       </tr>
     `

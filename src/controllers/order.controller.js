@@ -451,12 +451,15 @@ export const checkout = async (req, res, next) => {
 
     const shortOrderId = order._id.toString().slice(-5); // e.g., 'bb3f0'
 
-    const renderAttrs = (item) => {
-      const a = attributesOf(item);
-      return Object.entries(a)
-        .map(([k, v]) => `${k}: ${v}`)
+    // Column F: the chosen options, then the custom size exactly as the
+    // customer typed it, e.g. "size: Custom, custom size: 65 cm".
+    const renderAttrs = (item) =>
+      [
+        ...Object.entries(attributesOf(item)).map(([k, v]) => `${k}: ${v}`),
+        item.notes && `custom size: ${item.notes}`,
+      ]
+        .filter(Boolean)
         .join(", ");
-    };
 
     const deliveryAddress = formatOrderAddress({ ...delivery, governorate: governorateName });
 
@@ -544,6 +547,7 @@ export const checkout = async (req, res, next) => {
         type: item.product_id.type,
         quantity: item.quantity,
         attributes: attributesOf(item),
+        notes: item.notes || null,
         price: unitPriceOf(item),
       })),
       phone_number
