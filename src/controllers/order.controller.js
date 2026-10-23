@@ -13,6 +13,7 @@ import { sendOrderConfirmationEmail } from "../middlewares/mailer.middleware.js"
 import { recalculateCartTotal } from "./cart.controller.js";
 import { isValidPrice, unitPriceOf, toPiastres, toPounds } from "../utils/pricing.js";
 import { formatOrderAddress } from "../utils/address.js";
+import { STORE_TIMEZONE } from "../services/birthdayPromo.service.js";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 dotenv.config();
@@ -449,7 +450,9 @@ export const checkout = async (req, res, next) => {
       console.error(`❌ Order ${order._id} was placed, but the cart could not be emptied:`, err);
     }
 
-    const shortOrderId = order._id.toString().slice(-5); // e.g., 'bb3f0'
+    // Same code the customer sees in the confirmation email and on their
+    // profile (Order #A1B2C3), so a code they quote can be found in the sheet.
+    const shortOrderId = order._id.toString().slice(-6).toUpperCase(); // e.g. 'A1B2C3'
 
     // Column F: the chosen options, then the custom size exactly as the
     // customer typed it, e.g. "size: Custom, custom size: 65 cm".
@@ -463,24 +466,25 @@ export const checkout = async (req, res, next) => {
 
     const deliveryAddress = formatOrderAddress({ ...delivery, governorate: governorateName });
 
-    // Columns A–N are unchanged; the map link was added at the end (O) so
-    // the existing columns in the operations sheet don't move.
+    // One row per cart line, in the operations sheet's column order. If a
+    // column is moved in the sheet, move its value here to match.
     const sheetData = cart.items.map((item) => [
-      shortOrderId,
-      `${first_name} ${last_name}`,
-      item.product_id.type,
-      item.product_id.name,
-      item.quantity,
-      renderAttrs(item) || null,
-      deliveryAddress.full,
-      phone_number,
-      "Pending",
-      totalInt,
-      `${discount}%`,
-      subtotalInt,
-      shipping_cost,
-      new Date().toLocaleString(),
-      deliveryAddress.mapUrl,
+      shortOrderId, // A  Order ID
+      `${first_name} ${last_name}`, // B  Customer name
+      item.product_id.type, // C  Type
+      item.product_id.name, // D  Product
+      item.quantity, // E  Quantity
+      renderAttrs(item) || null, // F  Options
+      deliveryAddress.full, // G  Address
+      deliveryAddress.mapUrl, // H  Google Maps link (empty without a pin)
+      phone_number, // I  Mobile Number
+      "Pending", // J  Status
+      totalInt, // K  Total Amount
+      `${discount}%`, // L  Discount
+      subtotalInt, // M  Subtotal
+      shipping_cost, // N  Shipping
+      // The server runs in UTC; the sheet is read in Cairo.
+      new Date().toLocaleString("en-US", { timeZone: STORE_TIMEZONE }), // O  Order date
     ]);
 
     res.status(201).json({ message: "Order placed successfully.", order });
