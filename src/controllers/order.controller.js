@@ -13,6 +13,7 @@ import { sendOrderConfirmationEmail } from "../middlewares/mailer.middleware.js"
 import { recalculateCartTotal } from "./cart.controller.js";
 import { isValidPrice, unitPriceOf, toPiastres, toPounds } from "../utils/pricing.js";
 import { formatOrderAddress } from "../utils/address.js";
+import { orderOptionsText } from "../utils/orderOptions.js";
 import { STORE_TIMEZONE } from "../services/birthdayPromo.service.js";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
@@ -454,15 +455,9 @@ export const checkout = async (req, res, next) => {
     // profile (Order #A1B2C3), so a code they quote can be found in the sheet.
     const shortOrderId = order._id.toString().slice(-6).toUpperCase(); // e.g. 'A1B2C3'
 
-    // Column F: the chosen options, then the custom size exactly as the
-    // customer typed it, e.g. "size: Custom, custom size: 65 cm".
-    const renderAttrs = (item) =>
-      [
-        ...Object.entries(attributesOf(item)).map(([k, v]) => `${k}: ${v}`),
-        item.notes && `custom size: ${item.notes}`,
-      ]
-        .filter(Boolean)
-        .join(", ");
+    // Column F, worded the same as the confirmation email (utils/orderOptions.js):
+    // "Standard Size", or "Custom Size: 15 cm" with the size the customer typed.
+    const renderAttrs = (item) => orderOptionsText(attributesOf(item), item.notes);
 
     const deliveryAddress = formatOrderAddress({ ...delivery, governorate: governorateName });
 

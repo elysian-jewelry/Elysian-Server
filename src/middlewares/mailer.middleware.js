@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import nodemailer from 'nodemailer';
+import { orderOptionParts } from '../utils/orderOptions.js';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
@@ -91,16 +92,15 @@ export const sendOrderConfirmationEmail = async (
   items,
   phone_number
 ) => {
-  const titleCase = (s) =>
-    String(s || "").replace(/\b\w/g, (c) => c.toUpperCase());
-
-  // The chosen options, then the custom size exactly as the customer typed
-  // it (escaped: it is free text).
+  // Worded by utils/orderOptions.js, the same as the operations sheet:
+  // "Standard Size" or "Custom Size: 15 cm". Escaped: the custom size is
+  // free text the customer typed.
   const renderOptions = (attrs, notes) => {
-    const parts = Object.entries(attrs || {})
-      .filter(([, v]) => v != null && String(v).trim())
-      .map(([k, v]) => `<strong>${titleCase(k)}:</strong> ${v}`);
-    if (notes) parts.push(`<strong>Custom Size:</strong> ${escapeHtml(notes)}`);
+    const parts = orderOptionParts(attrs, notes).map(({ label, value }) =>
+      value
+        ? `<strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}`
+        : `<strong>${escapeHtml(label)}</strong>`
+    );
     return parts.length > 0 ? parts.join(" &middot; ") : "-";
   };
 
