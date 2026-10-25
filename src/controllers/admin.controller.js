@@ -1510,6 +1510,7 @@ export const getAllOrdersFull = async (req, res, next) => {
           governorate: 1,
           location: 1,
           phone_number: 1,
+          payment_method: 1,
           status: 1,
           items: 1,
           user: {

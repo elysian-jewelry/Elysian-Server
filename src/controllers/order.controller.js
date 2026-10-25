@@ -15,6 +15,7 @@ import { isValidPrice, unitPriceOf, toPiastres, toPounds } from "../utils/pricin
 import { formatOrderAddress } from "../utils/address.js";
 import { orderOptionsText } from "../utils/orderOptions.js";
 import { STORE_TIMEZONE } from "../services/birthdayPromo.service.js";
+import { PAYMENT_METHODS, paymentMethodLabel } from "../config/payment.js";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 dotenv.config();
@@ -150,6 +151,9 @@ export const checkout = async (req, res, next) => {
         ? { lat: Number(location.lat), lng: Number(location.lng) }
         : undefined,
     };
+
+    // A checkout page opened before InstaPay was offered sends no method.
+    const payment_method = req.body.payment_method || PAYMENT_METHODS.CASH_ON_DELIVERY;
 
     // Step 1 — lock the cart. Only one checkout can run on a cart at a time,
     // so two requests sent together (a double-click, or a script) can't both
@@ -362,6 +366,7 @@ export const checkout = async (req, res, next) => {
         ...delivery,
         governorate: governorateName,
         phone_number,
+        payment_method,
       });
 
       // Build a map of product_id → primary image url so each order_item carries
@@ -480,6 +485,7 @@ export const checkout = async (req, res, next) => {
       shipping_cost, // N  Shipping
       // The server runs in UTC; the sheet is read in Cairo.
       new Date().toLocaleString("en-US", { timeZone: STORE_TIMEZONE }), // O  Order date
+      paymentMethodLabel(payment_method), // P  Payment Method
     ]);
 
     res.status(201).json({ message: "Order placed successfully.", order });
@@ -549,7 +555,8 @@ export const checkout = async (req, res, next) => {
         notes: item.notes || null,
         price: unitPriceOf(item),
       })),
-      phone_number
+      phone_number,
+      payment_method
     );
   } catch (error) {
     console.error("❌ Checkout Error:", error);
@@ -617,7 +624,7 @@ const updateGoogleSheet = async (sheetData) => {
     const sheets = google.sheets({ version: "v4", auth: authClient });
 
     const spreadsheetId = process.env.GOOGLE_SPREAD_SHEET_ID; // from .env file
-    const range = "Sheet1!A2:O"; // Adjust the range to start from row 2 downwards
+    const range = "Sheet1!A2:P"; // Adjust the range to start from row 2 downwards
 
     // Every cell is customer-controlled text (name, address, notes), so the
     // sheet must not interpret any of it. RAW stores values verbatim;
@@ -711,6 +718,8 @@ export const getUserOrders = async (req, res, next) => {
           full: formatted.full,
         },
         contact_number: order.phone_number,
+        // Orders from before checkout offered a choice store none.
+        payment_method: order.payment_method || PAYMENT_METHODS.CASH_ON_DELIVERY,
         subtotal: order.subtotal,
         shipping_cost: order.shipping_cost ?? 0,
         discount_percent: discountPercent,

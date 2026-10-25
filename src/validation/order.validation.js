@@ -1,5 +1,6 @@
 // validationSchema.js
 import Joi from "joi";
+import { PAYMENT_METHODS } from "../config/payment.js";
 
 // Character classes for free-text order fields.
 //
@@ -133,4 +134,13 @@ export const checkoutSchema = Joi.object({
   .messages({
     "string.pattern.base": "Phone number must start with +2010, +2011, +2012, or +2015 and be 13 digits in total",
   }),
+  // Optional: a checkout page opened before InstaPay was offered sends no
+  // method, and checkout treats that as cash on delivery.
+  payment_method: Joi.string()
+    .valid(...Object.values(PAYMENT_METHODS))
+    .optional()
+    .messages({
+      "any.only": "Please choose Cash on Delivery or InstaPay as your payment method",
+      "string.base": "Please choose Cash on Delivery or InstaPay as your payment method",
+    }),
 });

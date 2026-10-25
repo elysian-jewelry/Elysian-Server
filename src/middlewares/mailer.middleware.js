@@ -4,6 +4,7 @@ dotenv.config();
 
 import nodemailer from 'nodemailer';
 import { orderOptionParts } from '../utils/orderOptions.js';
+import { PAYMENT_METHODS, paymentMethodLabel, INSTAPAY, INSTAGRAM } from '../config/payment.js';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
@@ -76,9 +77,48 @@ const deliveryAddressHtml = (address) => {
   return lines.map(escapeHtml).join("<br>") + mapLink;
 };
 
+/** An amount as the customer must transfer it: "880 EGP", "703.50 EGP". */
+const formatEGP = (n) => {
+  const v = Number(n) || 0;
+  return `${Number.isInteger(v) ? v : v.toFixed(2)} EGP`;
+};
+
+/**
+ * What an InstaPay customer has to do before the order is prepared: the
+ * amount, the payment link, and where to send the transfer screenshot.
+ */
+const instapayInstructionsHtml = (amount, orderCode) => `
+  <div style="margin: 24px auto; max-width: 520px; background-color: #fff5f8; border: 1px solid #ffc9dc; border-radius: 12px; padding: 24px; text-align: center;">
+    <h3 style="margin: 0 0 8px; color: #111; font-size: 18px;">Complete Your Payment</h3>
+    <p style="margin: 0 0 18px; font-size: 14px; color: #444; line-height: 1.6;">
+      You chose to pay with InstaPay. Please transfer the amount below to confirm your order.
+    </p>
+    <p style="margin: 0 0 2px; font-size: 13px; color: #666;">Amount to transfer</p>
+    <p style="margin: 0 0 18px; font-size: 26px; font-weight: 700; color: #ff4d88;">${amount}</p>
+    <a href="${INSTAPAY.link}" style="display: inline-block; background-color: #ff4d88; color: #ffffff; text-decoration: none; font-weight: 700; font-size: 15px; padding: 12px 32px; border-radius: 24px;">Pay with InstaPay</a>
+    <p style="margin: 12px 0 0; font-size: 13px; color: #666;">
+      Or send to the InstaPay address <strong style="color: #111;">${INSTAPAY.address}</strong>
+    </p>
+
+    <div style="margin: 24px 0 0; text-align: left; font-size: 14px; color: #111; line-height: 1.7;">
+      <p style="margin: 0 0 6px; font-weight: 700;">How to complete your order</p>
+      <ol style="margin: 0; padding-left: 20px;">
+        <li>Transfer exactly <strong>${amount}</strong> using the InstaPay link above.</li>
+        <li>Take a screenshot of the successful transfer.</li>
+        <li>Send the screenshot to us on Instagram at <a href="${INSTAGRAM.url}" style="color: #ff4d88; font-weight: 600;">${INSTAGRAM.handle}</a>, together with your order ID <strong>#${orderCode}</strong>.</li>
+      </ol>
+    </div>
+
+    <p style="margin: 20px 0 0; padding: 12px 14px; background-color: #ffffff; border-left: 4px solid #ff4d88; border-radius: 6px; text-align: left; font-size: 14px; font-weight: 700; color: #111; line-height: 1.6;">
+      Please note: your order will not begin preparation until your transfer is complete and we have received your payment screenshot on Instagram.
+    </p>
+  </div>
+`;
+
 /**
  * @param address the delivery address from formatOrderAddress()
  *   (utils/address.js): { street, unit, area, landmark, mapUrl, full }
+ * @param payment_method a value of PAYMENT_METHODS (config/payment.js)
  */
 export const sendOrderConfirmationEmail = async (
   email,
@@ -90,8 +130,13 @@ export const sendOrderConfirmationEmail = async (
   shipping_cost,
   order,
   items,
-  phone_number
+  phone_number,
+  payment_method = PAYMENT_METHODS.CASH_ON_DELIVERY
 ) => {
+  const isInstaPay = payment_method === PAYMENT_METHODS.INSTAPAY;
+  // The same code the customer sees on their profile (Order #A1B2C3).
+  const orderCode = order?._id ? String(order._id).slice(-6).toUpperCase() : "";
+
   // Worded by utils/orderOptions.js, the same as the operations sheet:
   // "Standard Size" or "Custom Size: 15 cm". Escaped: the custom size is
   // free text the customer typed.
@@ -135,6 +180,9 @@ const contactDetailsHtml = `
         ${phone_number || "-"}
       </a>
     </p>
+    <p style="margin: 10px 0 0;">
+      <strong>Payment Method:</strong> ${paymentMethodLabel(payment_method)}
+    </p>
   </div>
 `;
 
@@ -145,7 +193,7 @@ const summaryHtml = `
     <table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px auto; max-width: 420px; border-collapse: collapse;">
       <tr>
         <td style="padding: 6px 0; text-align: left;">Subtotal</td>
-        <td style="padding: 6px 0; text-align: right;">${subtotal} EGP</td>
+        <td style="padding: 6px 0; text-align: right;">${formatEGP(subtotal)}</td>
       </tr>
 
       ${
@@ -165,7 +213,7 @@ const summaryHtml = `
 
       <tr>
         <td style="padding: 6px 0; text-align: left;">Shipping</td>
-        <td style="padding: 6px 0; text-align: right;">${shipping_cost} EGP</td>
+        <td style="padding: 6px 0; text-align: right;">${formatEGP(shipping_cost)}</td>
       </tr>
 
       <tr style="border-top: 1px solid #eee;">
@@ -173,13 +221,14 @@ const summaryHtml = `
           Total
         </td>
         <td style="padding: 10px 0; text-align: right; font-weight: bold;">
-          ${order.total_amount} EGP
+          ${formatEGP(order.total_amount)}
         </td>
       </tr>
     </table>
 
     <p style="margin-top: 12px;">
-      <strong>Estimated Delivery:</strong> 5-7 working days 🚚
+      <strong>Estimated Delivery:</strong>
+      ${isInstaPay ? "5-7 working days after your payment is confirmed" : "5-7 working days"} 🚚
     </p>
   </div>
 `;
@@ -194,8 +243,11 @@ const summaryHtml = `
       </h2>
       <p style="font-size: 15px; margin: 0 0 6px; color: #111;">
         <strong>Order ID:</strong>
-        <span style="font-family: 'Courier New', monospace; color: #ff4d88; letter-spacing: 2px; font-size: 28px; font-weight: 700;">#${order?._id ? String(order._id).slice(-6).toUpperCase() : ''}</span>
+        <span style="font-family: 'Courier New', monospace; color: #ff4d88; letter-spacing: 2px; font-size: 28px; font-weight: 700;">#${orderCode}</span>
       </p>
+
+      ${isInstaPay ? instapayInstructionsHtml(formatEGP(order.total_amount), orderCode) : ""}
+
       <p style="font-size: 15px; margin-bottom: 20px; color: #111;">
         Here is your detailed receipt:
       </p>
@@ -230,7 +282,9 @@ const summaryHtml = `
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
-      subject: "🧾 Your Elysian Jewelry Order Receipt",
+      subject: isInstaPay
+        ? `🧾 Order #${orderCode}: Complete Your InstaPay Payment`
+        : "🧾 Your Elysian Jewelry Order Receipt",
       html: htmlContent,
     });
   } catch (err) {

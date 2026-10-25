@@ -1,6 +1,7 @@
 // models/Order.js
 
 import mongoose from "mongoose";
+import { PAYMENT_METHODS } from "../config/payment.js";
 
 const orderSchema = new mongoose.Schema(
   {
@@ -78,6 +79,13 @@ const orderSchema = new mongoose.Schema(
     phone_number: {
       type: String,
       required: true,
+    },
+    // config/payment.js. Orders placed before checkout offered a choice have
+    // no value stored and were all cash on delivery.
+    payment_method: {
+      type: String,
+      enum: Object.values(PAYMENT_METHODS),
+      default: PAYMENT_METHODS.CASH_ON_DELIVERY,
     },
     status: {
       type: String,
