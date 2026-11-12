@@ -38,15 +38,15 @@ import { runBirthdayPromoJob } from "../services/birthdayPromo.service.js";
 import { getVisitStats } from "../controllers/visit.controller.js";
 import { validate } from "../middlewares/validation.middleware.js";
 import { updateUserBirthdaySchema } from "../validation/admin.validation.js";
-import { saleSchema, salePricesSchema } from "../validation/sale.validation.js";
+import { saleSchema, productSalePricesSchema } from "../validation/sale.validation.js";
 import {
   listSales,
   createSale,
   updateSale,
   endSale,
   deleteSale,
-  getSalePrices,
-  updateSalePrices,
+  getSalePricing,
+  updateProductSalePrices,
 } from "../controllers/sale.controller.js";
 
 // Mounted at /admin behind requireAdmin (see routes/routes.js), so every path
@@ -146,9 +146,11 @@ router.post("/sales", validate(saleSchema), createSale);
 router.put("/sales/:id", validate(saleSchema), updateSale);
 router.post("/sales/:id/end", endSale);
 router.delete("/sales/:id", deleteSale);
-// The admin's own sale price for chosen products (regular prices untouched).
-router.get("/sales/:id/prices", getSalePrices);
-router.put("/sales/:id/prices", validate(salePricesSchema), updateSalePrices);
+// Sale prices per product, edited from the Products page (regular prices
+// untouched): the sale being priced with every item's prices, and saving one
+// product's sale prices.
+router.get("/sales/pricing", getSalePricing);
+router.put("/sales/:id/product-prices", validate(productSalePricesSchema), updateProductSalePrices);
 
 router.get("/users", getAllUsersLatest);
 

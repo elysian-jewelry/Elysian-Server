@@ -206,14 +206,24 @@ export const endSale = async (req, res, next) => {
 };
 
 /**
- * GET /admin/sales/:id/prices — every product and option with its regular
- * price (read from the product, never stored in the sale), the price the
- * sale's percentage gives, and the admin's own sale price if one is set.
+ * The sale whose prices the Products page edits: the one running now, or
+ * else the next one scheduled (so prices can be set ahead). null if neither.
  */
-export const getSalePrices = async (req, res, next) => {
+const findPricingSale = async (now = new Date()) =>
+  (await Sale.findOne({ starts_at: { $lte: now }, ends_at: { $gt: now } })) ||
+  (await Sale.findOne({ starts_at: { $gt: now } }).sort({ starts_at: 1 }));
+
+/**
+ * GET /admin/sales/pricing — for the Products page: the sale being priced
+ * (running, or else the next scheduled; null if neither) and, for every
+ * product and option, its regular price (read from the product, never
+ * stored in the sale), the price the sale's percentage gives, and its own
+ * sale price if the admin set one.
+ */
+export const getSalePricing = async (req, res, next) => {
   try {
-    const sale = await findSaleOr404(req, res);
-    if (!sale) return;
+    const sale = await findPricingSale();
+    if (!sale) return res.status(200).json({ sale: null, items: [] });
     const plainSale = sale.toObject();
 
     const products = await Product.find({})
@@ -253,12 +263,13 @@ export const getSalePrices = async (req, res, next) => {
 };
 
 /**
- * PUT /admin/sales/:id/prices — replaces the sale's custom prices with
- * `prices` ([{ product_id, variant_id, price }]; an item left out goes back
- * to the percentage). Only the sale record is written: no product's or
- * option's regular price is ever changed here.
+ * PUT /admin/sales/:id/product-prices — one product's own sale prices, from
+ * the Products page. `prices` has the product (or each of its options) with
+ * a sale price, or null to use the sale's percentage; it replaces that
+ * product's custom prices and leaves every other product's alone. Only the
+ * sale record is written: no regular price is ever changed here.
  */
-export const updateSalePrices = async (req, res, next) => {
+export const updateProductSalePrices = async (req, res, next) => {
   try {
     const sale = await findSaleOr404(req, res);
     if (!sale) return;
@@ -268,38 +279,28 @@ export const updateSalePrices = async (req, res, next) => {
       });
     }
 
-    const entries = req.body.prices.map((e) => ({
-      product_id: String(e.product_id),
-      variant_id: e.variant_id ? String(e.variant_id) : null,
-      price: Number(e.price),
-    }));
-
-    const seen = new Set();
-    for (const e of entries) {
-      const key = `${e.product_id}:${e.variant_id ?? ""}`;
-      if (seen.has(key)) {
-        return res.status(400).json({ message: "Each product or option can have only one sale price." });
-      }
-      seen.add(key);
-    }
-
-    // Each price is checked against the item's regular price as it is now.
-    const products = await Product.find({ _id: { $in: [...new Set(entries.map((e) => e.product_id))] } })
+    const product = await Product.findById(req.body.product_id)
       .select("name price product_variants")
       .populate({ path: "product_variants", select: "attributes price" })
       .lean();
-    const byId = new Map(products.map((p) => [String(p._id), p]));
-    const stale = "Some products or options have changed since this list was loaded. Reload the prices and try again.";
+    if (!product) return res.status(404).json({ message: "Product not found." });
+    const variants = product.product_variants || [];
+    const stale = "This product's options have changed. Reload the page and try again.";
 
-    for (const e of entries) {
-      const product = byId.get(e.product_id);
-      if (!product) return res.status(400).json({ message: stale });
-      const variants = product.product_variants || [];
-      const variant = e.variant_id ? variants.find((v) => String(v._id) === e.variant_id) : null;
-      if (variants.length ? !variant : e.variant_id) {
-        return res.status(400).json({ message: stale });
+    const entries = [];
+    const seen = new Set();
+    for (const e of req.body.prices) {
+      const variantId = e.variant_id ? String(e.variant_id) : null;
+      if (seen.has(variantId ?? "")) {
+        return res.status(400).json({ message: "Each option can have only one sale price." });
       }
+      seen.add(variantId ?? "");
 
+      const variant = variantId ? variants.find((v) => String(v._id) === variantId) : null;
+      if (variants.length ? !variant : variantId) return res.status(400).json({ message: stale });
+      if (e.price == null) continue; // uses the sale's percentage
+
+      // Checked against the item's regular price as it is now.
       const regular = variant ? variant.price : product.price;
       const label = variant
         ? `${product.name} (${optionLabel(variant.attributes) ?? "option"})`
@@ -314,9 +315,13 @@ export const updateSalePrices = async (req, res, next) => {
           message: `"${label}": the sale price (${e.price} EGP) can't be higher than its regular price (${regular} EGP).`,
         });
       }
+      entries.push({ product_id: product._id, variant_id: variant ? variant._id : null, price: e.price });
     }
 
-    sale.price_overrides = entries;
+    sale.price_overrides = [
+      ...sale.price_overrides.filter((o) => String(o.product_id) !== String(product._id)),
+      ...entries,
+    ];
     await sale.save();
     invalidateSaleCache();
 
@@ -324,8 +329,8 @@ export const updateSalePrices = async (req, res, next) => {
     return res.status(200).json({
       message:
         n === 0
-          ? `Every product in "${sale.title}" now uses the ${sale.percent}% discount.`
-          : `Saved ${n} custom sale price${n === 1 ? "" : "s"} for "${sale.title}".`,
+          ? `"${product.name}" uses the ${sale.percent}% discount in "${sale.title}".`
+          : `Saved the sale price${n === 1 ? "" : "s"} of "${product.name}" in "${sale.title}".`,
       sale: adminView(sale.toObject()),
     });
   } catch (error) {

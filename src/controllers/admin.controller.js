@@ -20,7 +20,8 @@ import { invalidateAdminCache } from "../services/adminCache.service.js";
 import { BIRTHDAY_PATTERN } from "../validation/admin.validation.js";
 import { grantBirthdayPromoIfDue } from "../services/birthdayPromo.service.js";
 import { recalculateCartTotal } from "./cart.controller.js";
-import { isValidPrice } from "../utils/pricing.js";
+import { isValidPrice, toPiastres } from "../utils/pricing.js";
+import { getActiveSale } from "../services/sale.service.js";
 
 const VARIANT_PRICE_ERROR = "Each product variant must have a valid price greater than 0";
 import {
@@ -1677,6 +1678,30 @@ export const updateProduct = async (req, res, next) => {
       if (taken) {
         return res.status(409).json({
           message: `A product named "${renameTo}" already exists in ${type}. Choose a different name.`,
+        });
+      }
+    }
+
+    // Regular prices are locked while a storewide sale runs: the admin sets
+    // the item's sale price instead (Products page → sale price). The edit
+    // form sends every price with each save, so the price an item already
+    // has is accepted. Checked before anything is saved.
+    const runningSale = await getActiveSale();
+    if (runningSale) {
+      const changes = (current, next) => next !== undefined && toPiastres(next) !== toPiastres(current);
+      let regularChanged = changes(product.price, price);
+      if (!regularChanged && variant_price !== undefined) {
+        const filter = variant_id && mongoose.Types.ObjectId.isValid(String(variant_id))
+          ? { _id: variant_id, product_id: product._id }
+          : match_attributes && typeof match_attributes === "object"
+            ? { product_id: product._id, attributes_key: buildAttributesKey(sanitizeAttributes(match_attributes) || {}) }
+            : null;
+        const current = filter && (await ProductVariant.findOne(filter).select("price").lean());
+        regularChanged = Boolean(current) && changes(current.price, variant_price);
+      }
+      if (regularChanged) {
+        return res.status(409).json({
+          message: `Regular prices are locked while "${runningSale.title}" is running. Change the sale price instead, or end the sale first.`,
         });
       }
     }

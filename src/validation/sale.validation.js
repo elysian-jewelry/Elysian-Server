@@ -39,26 +39,26 @@ export const saleSchema = Joi.object({
 
 const objectId = Joi.string().hex().length(24);
 
-// The admin's own sale prices for a sale: the full list, which replaces the
-// previous one. The controller checks each against the item's regular price.
-export const salePricesSchema = Joi.object({
+// One product's own sale prices, from the Products page: the product (or
+// each of its options) with a price, or null to use the sale's percentage.
+// The controller checks each against the item's regular price.
+export const productSalePricesSchema = Joi.object({
+  product_id: objectId.required(),
   prices: Joi.array()
-    .max(5000)
+    .max(500)
     .items(
       Joi.object({
-        product_id: objectId.required(),
         variant_id: objectId.allow(null).optional(),
         // strict: a price is a number as sent, never rounded into shape.
-        price: Joi.number().strict().greater(0).precision(2).required(),
+        price: Joi.number().strict().greater(0).precision(2).allow(null).required(),
       })
     )
-    .required()
-    .messages({
-      "any.required": "The list of sale prices is missing",
-      "number.base": "Each sale price must be a number",
-      "number.greater": "Each sale price must be more than 0",
-      "number.precision": "Sale prices can have at most 2 decimal places",
-      "string.hex": "Invalid product reference",
-      "string.length": "Invalid product reference",
-    }),
+    .required(),
+}).messages({
+  "any.required": "The product's sale prices are missing",
+  "number.base": "Each sale price must be a number",
+  "number.greater": "Each sale price must be more than 0",
+  "number.precision": "Sale prices can have at most 2 decimal places",
+  "string.hex": "Invalid product reference",
+  "string.length": "Invalid product reference",
 });
