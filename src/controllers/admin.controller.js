@@ -1511,6 +1511,8 @@ export const getAllOrdersFull = async (req, res, next) => {
           location: 1,
           phone_number: 1,
           payment_method: 1,
+          sale: 1,
+          original_subtotal: 1,
           status: 1,
           items: 1,
           user: {

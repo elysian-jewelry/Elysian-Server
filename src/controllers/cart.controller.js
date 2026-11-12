@@ -3,7 +3,8 @@ import CartItem from "../models/cartItem.js";
 import Product from "../models/product.js";
 import ProductVariant from "../models/productVariant.js";
 import { MAX_CART_ITEM_QUANTITY } from "../validation/cart.validation.js";
-import { isValidPrice, unitPriceOf, toPiastres, toPounds } from "../utils/pricing.js";
+import { isValidPrice, unitPriceOf, chargedUnitPriceOf, toPiastres, toPounds } from "../utils/pricing.js";
+import { getActiveSale, publicSale } from "../services/sale.service.js";
 
 // Convert a Mongoose Map (or plain object) into a serializable plain object.
 const attrsToObject = (m) => {
@@ -347,10 +348,22 @@ export const getUserCart = async (req, res, next) => {
       return res.status(404).json({ message: "Cart is empty" });
     }
 
+    // Lines are priced now, during the sale running now (if any), by the
+    // rule checkout charges. The stored total can't know when a sale starts
+    // or ends, so the total is added up here from those same prices.
+    const sale = await getActiveSale();
+    const totalPiastres = cart.items.reduce(
+      (sum, item) => sum + (toPiastres(chargedUnitPriceOf(item, sale)) || 0) * item.quantity,
+      0
+    );
+
     const simplifiedCart = {
       cart_id: cart._id,
       user_id: cart.user_id,
-      total_price: parseFloat(cart.total_price).toFixed(2),
+      total_price: toPounds(totalPiastres).toFixed(2),
+      // The sale these prices include. Checkout sends its id back, so a sale
+      // that ends (or starts) while the customer is paying is caught.
+      sale: publicSale(sale),
       cart_items: cart.items.map((item) => {
         const variant = item.variant_id;
         const product = variant?.product_id || item.product_id || {};
@@ -361,6 +374,9 @@ export const getUserCart = async (req, res, next) => {
         const attributes =
           attrsToObject(item.attributes) || attrsToObject(variant?.attributes);
 
+        const listPrice = Number(unitPriceOf(item)) || 0;
+        const charged = Number(chargedUnitPriceOf(item, sale)) || 0;
+
         return {
           cart_item_id: item._id,
           quantity: item.quantity,
@@ -369,7 +385,10 @@ export const getUserCart = async (req, res, next) => {
           variant_description: variant?.description || "",
           notes: item.notes || null,
           // Variant lines show the variant's price only, never the product's.
-          price: (Number(unitPriceOf(item)) || 0).toFixed(2),
+          // `price` is what checkout charges; `original_price` is the regular
+          // price, set only while a sale lowers it.
+          price: charged.toFixed(2),
+          original_price: charged < listPrice ? listPrice.toFixed(2) : null,
           product_id: product._id,
           product_name: product.name || null,
           product_type: product.type || null,

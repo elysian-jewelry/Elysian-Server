@@ -87,6 +87,25 @@ const orderSchema = new mongoose.Schema(
       enum: Object.values(PAYMENT_METHODS),
       default: PAYMENT_METHODS.CASH_ON_DELIVERY,
     },
+    // The storewide sale (models/sale.js) running when the order was placed,
+    // copied so the order keeps it however the sale is later edited.
+    // `subtotal` is at sale prices; `original_subtotal` at regular prices.
+    // Both are empty on orders placed outside a sale or before sales existed.
+    sale: {
+      type: new mongoose.Schema(
+        {
+          sale_id: { type: mongoose.Schema.Types.ObjectId, ref: "Sale" },
+          title: { type: String, required: true },
+          percent: { type: Number, required: true },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
+    original_subtotal: {
+      type: Number,
+      default: null,
+    },
     status: {
       type: String,
       enum: ["Pending", "Shipped", "Delivered", "Cancelled"],

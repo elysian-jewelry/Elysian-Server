@@ -11,7 +11,8 @@ import PromoCode from "../models/promoCode.js";
 import GovOrderRate from "../models/govOrderRate.js";
 import { sendOrderConfirmationEmail } from "../middlewares/mailer.middleware.js";
 import { recalculateCartTotal } from "./cart.controller.js";
-import { isValidPrice, unitPriceOf, toPiastres, toPounds } from "../utils/pricing.js";
+import { isValidPrice, unitPriceOf, chargedUnitPriceOf, toPiastres, toPounds } from "../utils/pricing.js";
+import { getActiveSale } from "../services/sale.service.js";
 import { formatOrderAddress } from "../utils/address.js";
 import { orderOptionsText } from "../utils/orderOptions.js";
 import { STORE_TIMEZONE } from "../services/birthdayPromo.service.js";
@@ -155,6 +156,24 @@ export const checkout = async (req, res, next) => {
     // A checkout page opened before InstaPay was offered sends no method.
     const payment_method = req.body.payment_method || PAYMENT_METHODS.CASH_ON_DELIVERY;
 
+    // The storewide sale running at the moment of purchase prices the whole
+    // order. The checkout page sends the id of the sale its prices came from
+    // (null for none). If that's no longer the sale running — it ended, or
+    // one began while the customer was paying — they're shown the new prices
+    // instead of being charged a total they never saw. A page from before
+    // sales existed sends nothing and is simply priced by the current sale.
+    const sale = await getActiveSale();
+    if (
+      req.body.sale_id !== undefined &&
+      (req.body.sale_id || null) !== (sale ? String(sale._id) : null)
+    ) {
+      return res.status(409).json({
+        message: sale
+          ? `"${sale.title}" has just started, so your order now shows the sale prices. Please review your total before placing your order.`
+          : "The sale has ended, so your order now shows regular prices. Please review your total before placing your order.",
+      });
+    }
+
     // Step 1 — lock the cart. Only one checkout can run on a cart at a time,
     // so two requests sent together (a double-click, or a script) can't both
     // read the same cart and promo code and each place an order.
@@ -229,11 +248,22 @@ export const checkout = async (req, res, next) => {
       });
     }
 
+    // What the customer pays per line: the sale price during a sale. The
+    // regular-price subtotal is kept on the order to show what the sale saved.
     const subtotalPiastres = cart.items.reduce(
-      (sum, item) => sum + toPiastres(unitPriceOf(item)) * item.quantity,
+      (sum, item) => sum + toPiastres(chargedUnitPriceOf(item, sale)) * item.quantity,
       0
     );
     const subtotal = toPounds(subtotalPiastres);
+    const originalSubtotalPiastres = cart.items.reduce(
+      (sum, item) => sum + toPiastres(unitPriceOf(item)) * item.quantity,
+      0
+    );
+    /** The regular unit price, only for a line the sale made cheaper. */
+    const originalPriceOf = (item) => {
+      const regular = unitPriceOf(item);
+      return chargedUnitPriceOf(item, sale) < regular ? regular : null;
+    };
 
     let discount = 0;
     let promo = null;
@@ -367,6 +397,8 @@ export const checkout = async (req, res, next) => {
         governorate: governorateName,
         phone_number,
         payment_method,
+        original_subtotal: toPounds(originalSubtotalPiastres),
+        sale: sale ? { sale_id: sale._id, title: sale.title, percent: sale.percent } : null,
       });
 
       // Build a map of product_id → primary image url so each order_item carries
@@ -395,7 +427,8 @@ export const checkout = async (req, res, next) => {
           notes: item.notes || null,
           quantity: item.quantity,
           // Same rule as the subtotal, so the line matches what was charged.
-          price: unitPriceOf(item),
+          price: chargedUnitPriceOf(item, sale),
+          original_price: originalPriceOf(item),
         };
       });
 
@@ -486,6 +519,7 @@ export const checkout = async (req, res, next) => {
       // The server runs in UTC; the sheet is read in Cairo.
       new Date().toLocaleString("en-US", { timeZone: STORE_TIMEZONE }), // O  Order date
       paymentMethodLabel(payment_method), // P  Payment Method
+      sale ? `${sale.title} (${sale.percent}% off)` : null, // Q  Sale
     ]);
 
     res.status(201).json({ message: "Order placed successfully.", order });
@@ -553,10 +587,12 @@ export const checkout = async (req, res, next) => {
         quantity: item.quantity,
         attributes: attributesOf(item),
         notes: item.notes || null,
-        price: unitPriceOf(item),
+        price: chargedUnitPriceOf(item, sale),
+        original_price: originalPriceOf(item),
       })),
       phone_number,
-      payment_method
+      payment_method,
+      sale
     );
   } catch (error) {
     console.error("❌ Checkout Error:", error);
@@ -624,7 +660,7 @@ const updateGoogleSheet = async (sheetData) => {
     const sheets = google.sheets({ version: "v4", auth: authClient });
 
     const spreadsheetId = process.env.GOOGLE_SPREAD_SHEET_ID; // from .env file
-    const range = "Sheet1!A2:P"; // Adjust the range to start from row 2 downwards
+    const range = "Sheet1!A2:Q"; // Adjust the range to start from row 2 downwards
 
     // Every cell is customer-controlled text (name, address, notes), so the
     // sheet must not interpret any of it. RAW stores values verbatim;
@@ -688,6 +724,8 @@ export const getUserOrders = async (req, res, next) => {
         type: item.product_type || null,
         quantity: item.quantity,
         price: parseFloat(item.price),
+        // The regular unit price when a sale made this line cheaper.
+        original_price: item.original_price != null ? parseFloat(item.original_price) : null,
         attributes,
         notes: item.notes || null,
         image_url:
@@ -725,6 +763,12 @@ export const getUserOrders = async (req, res, next) => {
         discount_percent: discountPercent,
         promo_used: discountPercent > 0,
         promo_code: order.promo_code || null,
+        // The storewide sale the order was placed in, and what it saved.
+        sale: order.sale ? { title: order.sale.title, percent: order.sale.percent } : null,
+        sale_savings:
+          order.sale && order.original_subtotal != null
+            ? toPounds(toPiastres(order.original_subtotal) - toPiastres(order.subtotal))
+            : 0,
         total_amount: order.total_amount,
         items: itemsByOrder[order._id.toString()] || [],
       };

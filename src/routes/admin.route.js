@@ -38,6 +38,14 @@ import { runBirthdayPromoJob } from "../services/birthdayPromo.service.js";
 import { getVisitStats } from "../controllers/visit.controller.js";
 import { validate } from "../middlewares/validation.middleware.js";
 import { updateUserBirthdaySchema } from "../validation/admin.validation.js";
+import { saleSchema } from "../validation/sale.validation.js";
+import {
+  listSales,
+  createSale,
+  updateSale,
+  endSale,
+  deleteSale,
+} from "../controllers/sale.controller.js";
 
 // Mounted at /admin behind requireAdmin (see routes/routes.js), so every path
 // below is relative and the public URLs are unchanged: "/users" here is
@@ -129,6 +137,13 @@ router.delete("/products", deleteProductsByNameAndType);
 router.get("/promo-codes", getAllPromoCodes);
 router.post("/promo-codes", createPublicPromo);
 router.delete("/promo-codes/:id", deletePromoCodeById);
+
+// ─── Storewide sales (one percentage off everything, between two dates) ───
+router.get("/sales", listSales);
+router.post("/sales", validate(saleSchema), createSale);
+router.put("/sales/:id", validate(saleSchema), updateSale);
+router.post("/sales/:id/end", endSale);
+router.delete("/sales/:id", deleteSale);
 
 router.get("/users", getAllUsersLatest);
 

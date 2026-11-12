@@ -5,6 +5,7 @@ dotenv.config();
 import nodemailer from 'nodemailer';
 import { orderOptionParts } from '../utils/orderOptions.js';
 import { PAYMENT_METHODS, paymentMethodLabel, INSTAPAY, INSTAGRAM } from '../config/payment.js';
+import { toPiastres, toPounds } from '../utils/pricing.js';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
@@ -119,6 +120,8 @@ const instapayInstructionsHtml = (amount, orderCode) => `
  * @param address the delivery address from formatOrderAddress()
  *   (utils/address.js): { street, unit, area, landmark, mapUrl, full }
  * @param payment_method a value of PAYMENT_METHODS (config/payment.js)
+ * @param sale the storewide sale the order was placed in ({ title, percent })
+ *   or null; items bought in it carry `original_price`, the regular price
  */
 export const sendOrderConfirmationEmail = async (
   email,
@@ -131,11 +134,30 @@ export const sendOrderConfirmationEmail = async (
   order,
   items,
   phone_number,
-  payment_method = PAYMENT_METHODS.CASH_ON_DELIVERY
+  payment_method = PAYMENT_METHODS.CASH_ON_DELIVERY,
+  sale = null
 ) => {
   const isInstaPay = payment_method === PAYMENT_METHODS.INSTAPAY;
   // The same code the customer sees on their profile (Order #A1B2C3).
   const orderCode = order?._id ? String(order._id).slice(-6).toUpperCase() : "";
+
+  /** The unit price; with a sale, the regular price struck through above it. */
+  const renderPrice = (item) =>
+    item.original_price != null
+      ? `<span style="color: #999; text-decoration: line-through;">${formatEGP(item.original_price)}</span><br>` +
+        `<strong style="color: #ff4d88;">${formatEGP(item.price)}</strong>`
+      : formatEGP(item.price);
+
+  // What the sale took off the whole order, added up in piastres.
+  const saleSavings = toPounds(
+    items.reduce(
+      (sum, item) =>
+        item.original_price != null
+          ? sum + (toPiastres(item.original_price) - toPiastres(item.price)) * item.quantity
+          : sum,
+      0
+    )
+  );
 
   // Worded by utils/orderOptions.js, the same as the operations sheet:
   // "Standard Size" or "Custom Size: 15 cm". Escaped: the custom size is
@@ -158,7 +180,7 @@ export const sendOrderConfirmationEmail = async (
         <td style="padding: 10px; text-align: center;">${item.type}</td>
         <td style="padding: 10px; text-align: center;">${item.quantity}</td>
         <td style="padding: 10px; text-align: center;">${renderOptions(item.attributes, item.notes)}</td>
-        <td style="padding: 10px; text-align: center;">${item.price} EGP</td>
+        <td style="padding: 10px; text-align: center;">${renderPrice(item)}</td>
       </tr>
     `
     )
@@ -224,6 +246,18 @@ const summaryHtml = `
           ${formatEGP(order.total_amount)}
         </td>
       </tr>
+
+      ${
+        sale && saleSavings > 0
+          ? `
+      <tr>
+        <td colspan="2" style="padding: 8px 0 0; text-align: center; color: #ff4d88; font-weight: 600;">
+          🎉 ${escapeHtml(sale.title)}: you saved ${formatEGP(saleSavings)} (${sale.percent}% off)
+        </td>
+      </tr>
+      `
+          : ""
+      }
     </table>
 
     <p style="margin-top: 12px;">

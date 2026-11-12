@@ -1,6 +1,7 @@
 import Product from "../models/product.js";
 import HomeSection from "../models/homeSection.js";
 import ProductCategory from "../models/productCategory.js";
+import { getActiveSale, salePriceField } from "../services/sale.service.js";
 
 export const getCategories = async (req, res, next) => {
   try {
@@ -36,7 +37,7 @@ export const getFeaturedProducts = async (req, res, next) => {
   try {
     const home = await loadHomeSection();
     const products = await hydrateProductIds(home.featured);
-    return res.status(200).json(formatProductResponse(products));
+    return res.status(200).json(formatProductResponse(products, await getActiveSale()));
   } catch (error) {
     console.error("Error fetching featured products:", error);
     return next(error);
@@ -47,7 +48,7 @@ export const getNewArrivalProducts = async (req, res, next) => {
   try {
     const home = await loadHomeSection();
     const products = await hydrateProductIds(home.new_arrivals);
-    return res.status(200).json(formatProductResponse(products));
+    return res.status(200).json(formatProductResponse(products, await getActiveSale()));
   } catch (error) {
     console.error("Error fetching new arrivals:", error);
     return next(error);
@@ -85,14 +86,20 @@ export const getProductsByType = async (req, res, next) => {
 
     const products = [...ordered, ...unordered];
 
-    return res.status(200).json(formatProductResponse(products));
+    return res.status(200).json(formatProductResponse(products, await getActiveSale()));
   } catch (error) {
     console.error(error);
     next(error);
   }
 };
 
-const formatProductResponse = (productsRaw) => {
+/**
+ * Products as the shop's pages receive them. `price` is always the regular
+ * price; during a storewide sale every product and option also carries
+ * `sale_price` (null otherwise), computed here by the same rule checkout
+ * charges, so pages show the two prices without doing any math.
+ */
+const formatProductResponse = (productsRaw, sale = null) => {
   return productsRaw.map((product) => {
     const plain =
       typeof product.toObject === "function"
@@ -107,6 +114,7 @@ const formatProductResponse = (productsRaw) => {
           attributes: attrsToObject(v.attributes),
           description: v.description || "",
           price: v.price,
+          sale_price: salePriceField(v.price, sale),
           stock_quantity: v.stock_quantity,
         }))
       : [];
@@ -116,6 +124,8 @@ const formatProductResponse = (productsRaw) => {
     if (variants.length > 0) {
       plain.variants = variants;
       delete plain.price; // remove product-level price if variants exist
+    } else {
+      plain.sale_price = salePriceField(plain.price, sale);
     }
 
     // Ensure option_type is a string or null on the wire.
@@ -149,7 +159,7 @@ export const getAllProducts = async (req, res, next) => {
 
     const products = [...ordered, ...unordered];
 
-    res.status(200).json(formatProductResponse(products));
+    res.status(200).json(formatProductResponse(products, await getActiveSale()));
   } catch (error) {
     console.error("Error fetching products:", error);
     next(error);

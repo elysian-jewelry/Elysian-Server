@@ -134,6 +134,13 @@ export const checkoutSchema = Joi.object({
   .messages({
     "string.pattern.base": "Phone number must start with +2010, +2011, +2012, or +2015 and be 13 digits in total",
   }),
+  // The storewide sale the checkout page's prices came from: its id, or null
+  // when the page showed regular prices. Optional for pages from before
+  // sales existed. Checkout compares it with the sale running now.
+  sale_id: Joi.string().hex().length(24).allow(null).optional().messages({
+    "string.hex": "Invalid sale reference",
+    "string.length": "Invalid sale reference",
+  }),
   // Optional: a checkout page opened before InstaPay was offered sends no
   // method, and checkout treats that as cash on delivery.
   payment_method: Joi.string()

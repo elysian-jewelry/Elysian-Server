@@ -44,9 +44,15 @@ const orderItemSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    // The unit price charged: the sale price when bought during a sale.
     price: {
       type: mongoose.Types.Decimal128,
       required: true,
+    },
+    // The regular unit price, only when a sale made the line cheaper.
+    original_price: {
+      type: mongoose.Types.Decimal128,
+      default: null,
     },
   },
   {

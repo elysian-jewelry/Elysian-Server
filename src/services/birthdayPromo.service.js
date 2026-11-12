@@ -13,7 +13,8 @@ import PromoCode from "../models/promoCode.js";
 import { sendBirthdayPromoCodeEmail } from "../middlewares/mailer.middleware.js";
 
 /** The store's calendar. "Today" for birthday purposes is today in Cairo. */
-export const STORE_TIMEZONE = "Africa/Cairo";
+import { STORE_TIMEZONE } from "../config/store.js";
+export { STORE_TIMEZONE };
 
 /**
  * How long a birthday code stays redeemable, as an absolute duration from
