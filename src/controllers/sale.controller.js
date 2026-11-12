@@ -338,22 +338,25 @@ export const updateProductSalePrices = async (req, res, next) => {
   }
 };
 
-/** DELETE /admin/sales/:id — only a sale that hasn't started. */
+/**
+ * DELETE /admin/sales/:id — removes a sale for good, whatever its state. A
+ * running one stops at once: prices are regular again on the next request,
+ * and a checkout opened with its prices is asked to review the new total.
+ * Orders placed in it keep their own copy of what was paid.
+ */
 export const deleteSale = async (req, res, next) => {
   try {
     const sale = await findSaleOr404(req, res);
     if (!sale) return;
-
-    if (statusOf(sale, new Date()) !== "scheduled") {
-      return res.status(409).json({
-        message:
-          "A sale that has started can't be deleted; it stays in the list as a record. Use End now to stop a running sale.",
-      });
-    }
+    const wasRunning = statusOf(sale, new Date()) === "active";
 
     await sale.deleteOne();
     invalidateSaleCache();
-    return res.status(200).json({ message: `"${sale.title}" has been deleted.` });
+    return res.status(200).json({
+      message: wasRunning
+        ? `"${sale.title}" has been deleted. Prices are back to normal.`
+        : `"${sale.title}" has been deleted.`,
+    });
   } catch (error) {
     return next(error);
   }
