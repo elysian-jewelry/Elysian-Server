@@ -12,7 +12,7 @@ import GovOrderRate from "../models/govOrderRate.js";
 import { sendOrderConfirmationEmail } from "../middlewares/mailer.middleware.js";
 import { recalculateCartTotal } from "./cart.controller.js";
 import { isValidPrice, unitPriceOf, chargedUnitPriceOf, toPiastres, toPounds } from "../utils/pricing.js";
-import { getActiveSale } from "../services/sale.service.js";
+import { getActiveSale, publicSale } from "../services/sale.service.js";
 import { formatOrderAddress } from "../utils/address.js";
 import { orderOptionsText } from "../utils/orderOptions.js";
 import { STORE_TIMEZONE } from "../services/birthdayPromo.service.js";
@@ -171,6 +171,17 @@ export const checkout = async (req, res, next) => {
         message: sale
           ? `"${sale.title}" has just started, so your order now shows the sale prices. Please review your total before placing your order.`
           : "The sale has ended, so your order now shows regular prices. Please review your total before placing your order.",
+      });
+    }
+    // Same sale, but the admin has changed its prices (percentage or a custom
+    // price) since the page loaded them.
+    if (
+      sale &&
+      req.body.sale_version != null &&
+      Number(req.body.sale_version) !== publicSale(sale).version
+    ) {
+      return res.status(409).json({
+        message: `"${sale.title}" prices were just updated, so your order now shows the new prices. Please review your total before placing your order.`,
       });
     }
 

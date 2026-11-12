@@ -141,6 +141,11 @@ export const checkoutSchema = Joi.object({
     "string.hex": "Invalid sale reference",
     "string.length": "Invalid sale reference",
   }),
+  // Which edit of that sale the prices came from (it changes whenever the
+  // admin changes the sale's prices).
+  sale_version: Joi.number().integer().min(0).allow(null).optional().messages({
+    "number.base": "Invalid sale reference",
+  }),
   // Optional: a checkout page opened before InstaPay was offered sends no
   // method, and checkout treats that as cash on delivery.
   payment_method: Joi.string()

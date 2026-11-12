@@ -11,7 +11,7 @@
 // covers a second server instance, should one ever run.
 
 import Sale from "../models/sale.js";
-import { applySale } from "../utils/pricing.js";
+import { salePriceOf } from "../utils/pricing.js";
 
 const REFRESH_MS = 60 * 1000;
 let cached = null; // { sales, loadedAt }
@@ -35,7 +35,11 @@ export const getActiveSale = async (now = new Date()) => {
   return sales.find((s) => s.starts_at <= now && now < s.ends_at) || null;
 };
 
-/** The sale as the shop's pages see it, or null. */
+/**
+ * The sale as the shop's pages see it, or null. `version` changes with every
+ * admin edit (percentage, dates, custom prices), so checkout can tell when
+ * the prices a customer is looking at have changed under them.
+ */
 export const publicSale = (sale) =>
   sale
     ? {
@@ -44,14 +48,16 @@ export const publicSale = (sale) =>
         percent: sale.percent,
         starts_at: sale.starts_at,
         ends_at: sale.ends_at,
+        version: new Date(sale.updated_at ?? sale.created_at ?? 0).getTime(),
       }
     : null;
 
 /**
  * `sale_price` for a product or option on the wire: the price during the
- * sale, or null when no sale is running or it doesn't lower this price.
+ * sale (the admin's own price for it, or the percentage), or null when no
+ * sale is running or it doesn't lower this price.
  */
-export const salePriceField = (price, sale) => {
-  const discounted = applySale(price, sale);
+export const salePriceField = (price, sale, productId = null, variantId = null) => {
+  const discounted = salePriceOf(price, sale, productId, variantId);
   return sale && discounted < price ? discounted : null;
 };

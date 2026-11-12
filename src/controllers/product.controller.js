@@ -114,7 +114,7 @@ const formatProductResponse = (productsRaw, sale = null) => {
           attributes: attrsToObject(v.attributes),
           description: v.description || "",
           price: v.price,
-          sale_price: salePriceField(v.price, sale),
+          sale_price: salePriceField(v.price, sale, plain._id, v._id),
           stock_quantity: v.stock_quantity,
         }))
       : [];
@@ -125,7 +125,7 @@ const formatProductResponse = (productsRaw, sale = null) => {
       plain.variants = variants;
       delete plain.price; // remove product-level price if variants exist
     } else {
-      plain.sale_price = salePriceField(plain.price, sale);
+      plain.sale_price = salePriceField(plain.price, sale, plain._id, null);
     }
 
     // Ensure option_type is a string or null on the wire.

@@ -46,5 +46,37 @@ export const applySale = (price, sale) => {
   return piastres >= 1 ? toPounds(piastres) : price;
 };
 
+// The admin's own sale price for chosen items (sale.price_overrides), looked
+// up through a map built once per sale object.
+const customPriceMaps = new WeakMap();
+const customKey = (productId, variantId) => `${productId}:${variantId ?? ""}`;
+const customSalePrice = (sale, productId, variantId) => {
+  if (!sale?.price_overrides?.length || productId == null) return undefined;
+  let prices = customPriceMaps.get(sale);
+  if (!prices) {
+    prices = new Map(
+      sale.price_overrides.map((o) => [customKey(o.product_id, o.variant_id), o.price])
+    );
+    customPriceMaps.set(sale, prices);
+  }
+  return prices.get(customKey(productId, variantId));
+};
+
+/**
+ * The price of one product (or one of its options, `variantId`) during
+ * `sale`: the admin's own sale price for it if one was set, the sale's
+ * percentage otherwise. Never more than the regular `price` — a custom price
+ * set before the regular price was lowered can't raise it. Regular prices
+ * come in here and are never changed.
+ */
+export const salePriceOf = (price, sale, productId = null, variantId = null) => {
+  if (!sale || !isValidPrice(price)) return price;
+  const custom = customSalePrice(sale, productId, variantId);
+  return isValidPrice(custom) ? Math.min(custom, price) : applySale(price, sale);
+};
+
+const idOf = (ref) => (ref && typeof ref === "object" && ref._id ? ref._id : ref);
+
 /** What a customer pays for one unit of a cart line, during `sale` if any. */
-export const chargedUnitPriceOf = (item, sale) => applySale(unitPriceOf(item), sale);
+export const chargedUnitPriceOf = (item, sale) =>
+  salePriceOf(unitPriceOf(item), sale, idOf(item.product_id), idOf(item.variant_id) ?? null);

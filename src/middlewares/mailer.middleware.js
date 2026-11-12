@@ -252,7 +252,7 @@ const summaryHtml = `
           ? `
       <tr>
         <td colspan="2" style="padding: 8px 0 0; text-align: center; color: #ff4d88; font-weight: 600;">
-          🎉 ${escapeHtml(sale.title)}: you saved ${formatEGP(saleSavings)} (${sale.percent}% off)
+          🎉 ${escapeHtml(sale.title)}: you saved ${formatEGP(saleSavings)}
         </td>
       </tr>
       `

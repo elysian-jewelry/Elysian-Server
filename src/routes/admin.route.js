@@ -38,13 +38,15 @@ import { runBirthdayPromoJob } from "../services/birthdayPromo.service.js";
 import { getVisitStats } from "../controllers/visit.controller.js";
 import { validate } from "../middlewares/validation.middleware.js";
 import { updateUserBirthdaySchema } from "../validation/admin.validation.js";
-import { saleSchema } from "../validation/sale.validation.js";
+import { saleSchema, salePricesSchema } from "../validation/sale.validation.js";
 import {
   listSales,
   createSale,
   updateSale,
   endSale,
   deleteSale,
+  getSalePrices,
+  updateSalePrices,
 } from "../controllers/sale.controller.js";
 
 // Mounted at /admin behind requireAdmin (see routes/routes.js), so every path
@@ -144,6 +146,9 @@ router.post("/sales", validate(saleSchema), createSale);
 router.put("/sales/:id", validate(saleSchema), updateSale);
 router.post("/sales/:id/end", endSale);
 router.delete("/sales/:id", deleteSale);
+// The admin's own sale price for chosen products (regular prices untouched).
+router.get("/sales/:id/prices", getSalePrices);
+router.put("/sales/:id/prices", validate(salePricesSchema), updateSalePrices);
 
 router.get("/users", getAllUsersLatest);
 
