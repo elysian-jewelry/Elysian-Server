@@ -508,8 +508,7 @@ export const sendSaleAnnouncementEmail = async (email, sale) => {
               </p>
               <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 auto 26px; font-family: ${font};">
                 ${perk("💎", `<strong>${percent}% off</strong> every piece and every option`)}
-                ${perk("🏷️", "<strong>No code needed:</strong> prices are already reduced on the website")}
-                ${perk("⏳", `Ends <strong>${endsHtml}</strong> (Cairo time), while stock lasts`)}
+                ${perk("⏳", `Ends <strong>${endsHtml}</strong>, while stock lasts`)}
               </table>
               <div style="text-align: center; margin: 0 0 14px;">
                 <a href="${STORE_URL}" style="display: inline-block; background-color: #ff4d88; color: #ffffff; text-decoration: none; font-weight: 800; font-size: 16px; letter-spacing: 1px; padding: 16px 44px; border-radius: 999px;">SHOP THE SALE</a>
@@ -549,8 +548,7 @@ export const sendSaleAnnouncementEmail = async (email, sale) => {
     `${sale.title}: ${percent}% OFF EVERYTHING`,
     "",
     `Don't miss it! Every piece in the store is ${percent}% off, for a limited time only.`,
-    "No code needed: prices are already reduced on the website.",
-    `Ends ${ends} (Cairo time), while stock lasts.`,
+    `Ends ${ends}, while stock lasts.`,
     "",
     `Shop the sale: ${STORE_URL}`,
     "",
