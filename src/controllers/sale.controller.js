@@ -7,11 +7,7 @@ import { getActiveSale, invalidateSaleCache, publicSale } from "../services/sale
 import { announcementStatus, startSaleAnnouncement } from "../services/saleAnnouncement.service.js";
 import { storeTimeToDate, dateToStoreTime } from "../utils/storeTime.js";
 import { STORE_TIMEZONE } from "../config/store.js";
-import {
-  SALE_EMAIL_TEST_MODE,
-  SALE_EMAIL_TEST_RECIPIENTS,
-  SALE_EMAIL_GAP_MS,
-} from "../config/saleEmail.js";
+import { SALE_EMAIL_GAP_MS } from "../config/saleEmail.js";
 
 /** "11 Nov 2026, 11:59 pm" in Cairo, for messages to the admin. */
 const formatStoreTime = (date) =>
@@ -130,12 +126,8 @@ export const listSales = async (req, res, next) => {
     return res.status(200).json({
       sales: sales.map((s) => adminView(s, now)),
       timezone: STORE_TIMEZONE,
-      // For "Email customers": who it would go to right now.
-      email: {
-        test_mode: SALE_EMAIL_TEST_MODE,
-        test_recipients: SALE_EMAIL_TEST_MODE ? SALE_EMAIL_TEST_RECIPIENTS : [],
-        customers,
-      },
+      // For "Email customers": how many customers it goes to.
+      email: { customers },
     });
   } catch (error) {
     return next(error);
@@ -358,10 +350,9 @@ export const updateProductSalePrices = async (req, res, next) => {
 
 /**
  * POST /admin/sales/:id/announce — emails the "don't miss the sale" email
- * for a running sale (services/saleAnnouncement.service.js). In test mode it
- * goes only to the test address, and the reply says whether it was sent. To
- * every customer it takes minutes, so the reply comes as soon as it starts
- * and the Sales page shows its progress.
+ * for a running sale to every customer (services/saleAnnouncement.service.js).
+ * It takes minutes, so the reply comes as soon as it starts and the Sales
+ * page shows its progress.
  */
 export const announceSale = async (req, res, next) => {
   try {
@@ -389,24 +380,7 @@ export const announceSale = async (req, res, next) => {
       return res.status(400).json({ message: "There are no customers to email yet." });
     }
 
-    const { progress, done } = started;
-    if (progress.test) {
-      const result = await done;
-      const to = SALE_EMAIL_TEST_RECIPIENTS.join(", ");
-      if (result.sent === 0) {
-        return res.status(502).json({
-          message:
-            result.stopped === "sale_ended"
-              ? "The sale ended before the test email was sent."
-              : `The test email to ${to} couldn't be sent. Please try again.`,
-        });
-      }
-      return res.status(200).json({
-        message: `Test email sent to ${to} only. Check the inbox (and the Promotions or Spam folder). Customers didn't receive it.`,
-        sale: adminView(sale.toObject()),
-      });
-    }
-
+    const { progress } = started;
     const minutes = Math.max(1, Math.ceil((progress.total * SALE_EMAIL_GAP_MS) / 60000));
     return res.status(202).json({
       message:

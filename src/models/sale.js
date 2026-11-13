@@ -71,7 +71,7 @@ const saleSchema = new mongoose.Schema(
       default: [],
     },
     // The last time this sale was emailed to every customer ("Email
-    // customers" on the admin Sales page). Test sends aren't recorded.
+    // customers" on the admin Sales page).
     announcement: {
       type: new mongoose.Schema(
         {
