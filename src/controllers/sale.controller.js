@@ -1,10 +1,17 @@
 import mongoose from "mongoose";
 import Sale from "../models/sale.js";
 import Product from "../models/product.js";
+import User from "../models/user.js";
 import { applySale, isValidPrice, toPiastres } from "../utils/pricing.js";
 import { getActiveSale, invalidateSaleCache, publicSale } from "../services/sale.service.js";
+import { announcementStatus, startSaleAnnouncement } from "../services/saleAnnouncement.service.js";
 import { storeTimeToDate, dateToStoreTime } from "../utils/storeTime.js";
 import { STORE_TIMEZONE } from "../config/store.js";
+import {
+  SALE_EMAIL_TEST_MODE,
+  SALE_EMAIL_TEST_RECIPIENTS,
+  SALE_EMAIL_GAP_MS,
+} from "../config/saleEmail.js";
 
 /** "11 Nov 2026, 11:59 pm" in Cairo, for messages to the admin. */
 const formatStoreTime = (date) =>
@@ -28,6 +35,8 @@ const adminView = (sale, now = new Date()) => ({
   ends_at_local: dateToStoreTime(sale.ends_at),
   status: statusOf(sale, now),
   custom_prices: (sale.price_overrides || []).length,
+  // The customer email: being sent now, or the last send (null if never).
+  announcement: announcementStatus(sale),
 });
 
 /**
@@ -114,10 +123,19 @@ export const getCurrentSale = async (req, res, next) => {
 export const listSales = async (req, res, next) => {
   try {
     const now = new Date();
-    const sales = await Sale.find({}).sort({ starts_at: -1 }).lean();
+    const [sales, customers] = await Promise.all([
+      Sale.find({}).sort({ starts_at: -1 }).lean(),
+      User.countDocuments(),
+    ]);
     return res.status(200).json({
       sales: sales.map((s) => adminView(s, now)),
       timezone: STORE_TIMEZONE,
+      // For "Email customers": who it would go to right now.
+      email: {
+        test_mode: SALE_EMAIL_TEST_MODE,
+        test_recipients: SALE_EMAIL_TEST_MODE ? SALE_EMAIL_TEST_RECIPIENTS : [],
+        customers,
+      },
     });
   } catch (error) {
     return next(error);
@@ -331,6 +349,69 @@ export const updateProductSalePrices = async (req, res, next) => {
         n === 0
           ? `"${product.name}" uses the ${sale.percent}% discount in "${sale.title}".`
           : `Saved the sale price${n === 1 ? "" : "s"} of "${product.name}" in "${sale.title}".`,
+      sale: adminView(sale.toObject()),
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * POST /admin/sales/:id/announce — emails the "don't miss the sale" email
+ * for a running sale (services/saleAnnouncement.service.js). In test mode it
+ * goes only to the test address, and the reply says whether it was sent. To
+ * every customer it takes minutes, so the reply comes as soon as it starts
+ * and the Sales page shows its progress.
+ */
+export const announceSale = async (req, res, next) => {
+  try {
+    const sale = await findSaleOr404(req, res);
+    if (!sale) return;
+
+    const status = statusOf(sale, new Date());
+    if (status !== "active") {
+      return res.status(409).json({
+        message:
+          status === "scheduled"
+            ? "You can email customers once this sale has started."
+            : "This sale has ended, so there's nothing to announce.",
+      });
+    }
+
+    const started = await startSaleAnnouncement(sale.toObject());
+    if (started.error === "busy") {
+      const { sent, failed, total } = started.progress;
+      return res.status(409).json({
+        message: `"${sale.title}" is already being emailed: ${sent + failed} of ${total} done so far.`,
+      });
+    }
+    if (started.error === "no_recipients") {
+      return res.status(400).json({ message: "There are no customers to email yet." });
+    }
+
+    const { progress, done } = started;
+    if (progress.test) {
+      const result = await done;
+      const to = SALE_EMAIL_TEST_RECIPIENTS.join(", ");
+      if (result.sent === 0) {
+        return res.status(502).json({
+          message:
+            result.stopped === "sale_ended"
+              ? "The sale ended before the test email was sent."
+              : `The test email to ${to} couldn't be sent. Please try again.`,
+        });
+      }
+      return res.status(200).json({
+        message: `Test email sent to ${to} only. Check the inbox (and the Promotions or Spam folder). Customers didn't receive it.`,
+        sale: adminView(sale.toObject()),
+      });
+    }
+
+    const minutes = Math.max(1, Math.ceil((progress.total * SALE_EMAIL_GAP_MS) / 60000));
+    return res.status(202).json({
+      message:
+        `Emailing "${sale.title}" to ${progress.total} customer${progress.total === 1 ? "" : "s"}. ` +
+        `It goes out gradually and takes about ${minutes} minute${minutes === 1 ? "" : "s"}; you can leave this page.`,
       sale: adminView(sale.toObject()),
     });
   } catch (error) {

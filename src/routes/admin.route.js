@@ -45,6 +45,7 @@ import {
   updateSale,
   endSale,
   deleteSale,
+  announceSale,
   getSalePricing,
   updateProductSalePrices,
 } from "../controllers/sale.controller.js";
@@ -146,6 +147,8 @@ router.post("/sales", validate(saleSchema), createSale);
 router.put("/sales/:id", validate(saleSchema), updateSale);
 router.post("/sales/:id/end", endSale);
 router.delete("/sales/:id", deleteSale);
+// Email the running sale to customers (test address only while in test mode).
+router.post("/sales/:id/announce", announceSale);
 // Sale prices per product, edited from the Products page (regular prices
 // untouched): the sale being priced with every item's prices, and saving one
 // product's sale prices.

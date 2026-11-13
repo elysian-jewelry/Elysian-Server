@@ -70,6 +70,22 @@ const saleSchema = new mongoose.Schema(
       type: [priceOverrideSchema],
       default: [],
     },
+    // The last time this sale was emailed to every customer ("Email
+    // customers" on the admin Sales page). Test sends aren't recorded.
+    announcement: {
+      type: new mongoose.Schema(
+        {
+          sent_at: { type: Date, required: true },
+          total: { type: Number, default: 0 },
+          sent: { type: Number, default: 0 },
+          failed: { type: Number, default: 0 },
+          // Why it stopped early, or null if every email was tried.
+          stopped: { type: String, default: null },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
   },
   {
     collection: "sales",

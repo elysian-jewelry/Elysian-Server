@@ -6,6 +6,7 @@ import nodemailer from 'nodemailer';
 import { orderOptionParts } from '../utils/orderOptions.js';
 import { PAYMENT_METHODS, paymentMethodLabel, INSTAPAY, INSTAGRAM } from '../config/payment.js';
 import { toPiastres, toPounds } from '../utils/pricing.js';
+import { STORE_TIMEZONE, STORE_URL } from '../config/store.js';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
@@ -431,6 +432,140 @@ export const sendMissingBirthdayEmail = async (user) => {
     console.error("Error sending missing birthday email:", error);
     throw new Error("Error sending missing birthday email");
   }
+};
+
+/** "Sunday, 16 November at 11:59 PM", in Cairo time, for the sale email. */
+const saleEndText = (endsAt) => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: STORE_TIMEZONE,
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+      .formatToParts(new Date(endsAt))
+      .map((p) => [p.type, p.value])
+  );
+  return `${parts.weekday}, ${parts.day} ${parts.month} at ${parts.hour}:${parts.minute} ${String(parts.dayPeriod).toUpperCase()}`;
+};
+
+/**
+ * "Don't miss the sale": sent to customers from the admin Sales page while a
+ * sale runs (services/saleAnnouncement.service.js). Throws if it can't be
+ * sent, so the sender can count it.
+ * @param sale the running sale: { title, percent, ends_at }
+ */
+export const sendSaleAnnouncementEmail = async (email, sale) => {
+  const title = escapeHtml(sale.title);
+  const percent = Number(sale.percent);
+  const ends = saleEndText(sale.ends_at);
+  // "at 11:59 PM" stays on one line when a phone wraps the date.
+  const endsHtml = ends.replace(/ at (\S+) (AM|PM)$/, " at&nbsp;$1&nbsp;$2");
+  const font ="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+
+  const perk = (icon, text) => `
+    <tr>
+      <td width="36" valign="top" style="padding: 6px 0; font-size: 18px;">${icon}</td>
+      <td style="padding: 6px 0; font-size: 15px; color: #222; line-height: 1.5;">${text}</td>
+    </tr>`;
+
+  const html = `
+  <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">
+    ${percent}% off everything at Elysian Jewelry. Ends ${ends}.
+  </div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #fff0f6;">
+    <tr>
+      <td align="center" style="padding: 24px 12px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border: 1px solid #ffc9dc; border-radius: 16px; overflow: hidden;">
+
+          <tr>
+            <td align="center" style="background-color: #222222; padding: 22px 20px 18px;">
+              <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 34px; font-weight: 700; color: #ffffff; line-height: 1;">elysian</div>
+              <div style="font-family: ${font}; font-size: 11px; letter-spacing: 6px; color: #FEC7DA; margin-top: 6px;">JEWELRY</div>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background-color: #FEC7DA; padding: 40px 24px 36px; font-family: ${font};">
+              <div style="font-size: 13px; font-weight: 800; letter-spacing: 4px; color: #C2185B; text-transform: uppercase;">${title}</div>
+              <div style="font-size: 72px; font-weight: 900; color: #111111; line-height: 1; margin: 16px 0 6px;">${percent}% OFF</div>
+              <div style="font-size: 18px; font-weight: 800; letter-spacing: 8px; color: #111111;">EVERYTHING</div>
+              <div style="display: inline-block; margin-top: 24px; background-color: #222222; color: #ffffff; border-radius: 999px; padding: 10px 22px; font-size: 14px; font-weight: 600;">
+                ⏳ Ends ${endsHtml}
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 34px 32px 6px; font-family: ${font}; color: #111111;">
+              <h1 style="margin: 0 0 12px; font-size: 26px; text-align: center;">Don't miss it ✨</h1>
+              <p style="margin: 0 0 22px; font-size: 16px; line-height: 1.6; text-align: center; color: #444444;">
+                Our <strong style="color: #111111;">${title}</strong> is live! Every piece in the store is
+                <strong style="color: #C2185B;">${percent}% off</strong>, for a limited time only.
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 auto 26px; font-family: ${font};">
+                ${perk("💎", `<strong>${percent}% off</strong> every piece and every option`)}
+                ${perk("🏷️", "<strong>No code needed:</strong> prices are already reduced on the website")}
+                ${perk("⏳", `Ends <strong>${endsHtml}</strong> (Cairo time), while stock lasts`)}
+              </table>
+              <div style="text-align: center; margin: 0 0 14px;">
+                <a href="${STORE_URL}" style="display: inline-block; background-color: #ff4d88; color: #ffffff; text-decoration: none; font-weight: 800; font-size: 16px; letter-spacing: 1px; padding: 16px 44px; border-radius: 999px;">SHOP THE SALE</a>
+              </div>
+              <p style="margin: 0 0 30px; font-size: 14px; text-align: center; color: #666666;">
+                Favourites go fast. Grab yours before the sale ends 💗
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 0 32px 30px; font-family: ${font}; font-size: 14px; color: #444444; border-top: 1px solid #ffe0ea;">
+              <p style="margin: 24px 0 0; line-height: 1.6;">
+                With sparkle and love ✨<br>
+                <strong style="color: #ff4d88;">The Elysian Jewelry Team</strong>
+              </p>
+              <p style="margin: 14px 0 0;">
+                Follow us on Instagram: <a href="${INSTAGRAM.url}" style="color: #ff4d88; font-weight: 600;">${INSTAGRAM.handle}</a>
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="background-color: #fff5f8; padding: 16px 24px; font-family: ${font}; font-size: 12px; color: #888888; line-height: 1.6;">
+              You're receiving this email because you have an account at Elysian Jewelry.<br>
+              This is an automated message. Please do not reply.
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+  `;
+
+  const text = [
+    `${sale.title}: ${percent}% OFF EVERYTHING`,
+    "",
+    `Don't miss it! Every piece in the store is ${percent}% off, for a limited time only.`,
+    "No code needed: prices are already reduced on the website.",
+    `Ends ${ends} (Cairo time), while stock lasts.`,
+    "",
+    `Shop the sale: ${STORE_URL}`,
+    "",
+    "With sparkle and love,",
+    "The Elysian Jewelry Team",
+    `Instagram: ${INSTAGRAM.url}`,
+  ].join("\n");
+
+  await transporter.sendMail({
+    from: { name: "Elysian Jewelry", address: process.env.EMAIL_USER },
+    to: email,
+    subject: `✨ ${sale.title}: ${percent}% off everything. Don't miss it!`,
+    html,
+    text,
+  });
 };
 
 
