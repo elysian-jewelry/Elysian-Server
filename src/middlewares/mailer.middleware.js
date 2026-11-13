@@ -4,7 +4,7 @@ dotenv.config();
 
 import nodemailer from 'nodemailer';
 import { orderOptionParts } from '../utils/orderOptions.js';
-import { PAYMENT_METHODS, paymentMethodLabel, INSTAPAY, INSTAGRAM } from '../config/payment.js';
+import { PAYMENT_METHODS, paymentMethodLabel, INSTAPAY, INSTAGRAM, TIKTOK } from '../config/payment.js';
 import { toPiastres, toPounds } from '../utils/pricing.js';
 import { STORE_TIMEZONE, STORE_URL } from '../config/store.js';
 
@@ -526,7 +526,8 @@ export const sendSaleAnnouncementEmail = async (email, sale) => {
                 <strong style="color: #ff4d88;">The Elysian Jewelry Team</strong>
               </p>
               <p style="margin: 14px 0 0;">
-                Follow us on Instagram: <a href="${INSTAGRAM.url}" style="color: #ff4d88; font-weight: 600;">${INSTAGRAM.handle}</a>
+                Follow us on Instagram: <a href="${INSTAGRAM.url}" style="color: #ff4d88; font-weight: 600;">${INSTAGRAM.handle}</a><br>
+                and TikTok: <a href="${TIKTOK.url}" style="color: #ff4d88; font-weight: 600;">${TIKTOK.handle}</a>
               </p>
             </td>
           </tr>
@@ -555,6 +556,7 @@ export const sendSaleAnnouncementEmail = async (email, sale) => {
     "With sparkle and love,",
     "The Elysian Jewelry Team",
     `Instagram: ${INSTAGRAM.url}`,
+    `TikTok: ${TIKTOK.url}`,
   ].join("\n");
 
   await transporter.sendMail({

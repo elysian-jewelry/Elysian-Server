@@ -25,3 +25,9 @@ export const INSTAGRAM = {
   handle: "@elysian.jewelry.eg",
   url: "https://www.instagram.com/elysian.jewelry.eg",
 };
+
+// The shop's TikTok, shown next to Instagram where customers are asked to follow us.
+export const TIKTOK = {
+  handle: "@elysianjewelryeg",
+  url: "https://www.tiktok.com/@elysianjewelryeg",
+};
