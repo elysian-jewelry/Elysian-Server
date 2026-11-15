@@ -6,7 +6,7 @@ export const getUserProfile = async (req, res, next) => {
   try {
     const user_id = req.user.user_id;
 
-    const user = await User.findById(user_id).select("-password");
+    const user = await User.findById(user_id).select("-password -sale_email_log");
 
     if (!user) return res.status(404).json({ message: "User not found" });
 

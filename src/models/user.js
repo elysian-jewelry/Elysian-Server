@@ -35,6 +35,21 @@ const userSchema = new mongoose.Schema(
       default: "Unknown",
       index: true,
     },
+    // Sale emails this customer has received ("Email customers" on the
+    // admin Sales page): one entry per sale, so nobody gets a sale's email
+    // twice, and the daily limit counts what went out in the last 24 hours.
+    sale_email_log: {
+      type: [
+        new mongoose.Schema(
+          {
+            sale_id: { type: mongoose.Schema.Types.ObjectId, ref: "Sale", required: true },
+            sent_at: { type: Date, required: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },

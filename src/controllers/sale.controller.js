@@ -4,10 +4,14 @@ import Product from "../models/product.js";
 import User from "../models/user.js";
 import { applySale, isValidPrice, toPiastres } from "../utils/pricing.js";
 import { getActiveSale, invalidateSaleCache, publicSale } from "../services/sale.service.js";
-import { announcementStatus, startSaleAnnouncement } from "../services/saleAnnouncement.service.js";
+import {
+  announcementStatus,
+  saleEmailStats,
+  startSaleAnnouncement,
+} from "../services/saleAnnouncement.service.js";
 import { storeTimeToDate, dateToStoreTime } from "../utils/storeTime.js";
 import { STORE_TIMEZONE } from "../config/store.js";
-import { SALE_EMAIL_GAP_MS } from "../config/saleEmail.js";
+import { SALE_EMAIL_DAILY_LIMIT, SALE_EMAIL_GAP_MS } from "../config/saleEmail.js";
 
 /** "11 Nov 2026, 11:59 pm" in Cairo, for messages to the admin. */
 const formatStoreTime = (date) =>
@@ -119,15 +123,24 @@ export const getCurrentSale = async (req, res, next) => {
 export const listSales = async (req, res, next) => {
   try {
     const now = new Date();
-    const [sales, customers] = await Promise.all([
+    const [sales, customers, stats] = await Promise.all([
       Sale.find({}).sort({ starts_at: -1 }).lean(),
       User.countDocuments(),
+      saleEmailStats(now),
     ]);
     return res.status(200).json({
-      sales: sales.map((s) => adminView(s, now)),
+      // `emailed`: how many customers have received the sale's email.
+      sales: sales.map((s) => ({ ...adminView(s, now), emailed: stats.perSale.get(String(s._id)) || 0 })),
       timezone: STORE_TIMEZONE,
-      // For "Email customers": how many customers it goes to.
-      email: { customers },
+      // For "Email customers": the customers, and how many sale emails the
+      // daily limit allows right now (or when it allows more).
+      email: {
+        customers,
+        daily_limit: SALE_EMAIL_DAILY_LIMIT,
+        sent_last_24h: stats.sentLast24h,
+        available_now: stats.availableNow,
+        more_at: stats.moreAt,
+      },
     });
   } catch (error) {
     return next(error);
@@ -350,9 +363,10 @@ export const updateProductSalePrices = async (req, res, next) => {
 
 /**
  * POST /admin/sales/:id/announce — emails the "don't miss the sale" email
- * for a running sale to every customer (services/saleAnnouncement.service.js).
- * It takes minutes, so the reply comes as soon as it starts and the Sales
- * page shows its progress.
+ * for a running sale to the customers who haven't received it yet, as many
+ * as the daily limit allows (services/saleAnnouncement.service.js). It takes
+ * minutes, so the reply comes as soon as it starts and the Sales page shows
+ * its progress.
  */
 export const announceSale = async (req, res, next) => {
   try {
@@ -373,19 +387,30 @@ export const announceSale = async (req, res, next) => {
     if (started.error === "busy") {
       const { sent, failed, total } = started.progress;
       return res.status(409).json({
-        message: `"${sale.title}" is already being emailed: ${sent + failed} of ${total} done so far.`,
+        message: `Customers are already being emailed: ${sent + failed} of ${total} done so far.`,
       });
     }
-    if (started.error === "no_recipients") {
-      return res.status(400).json({ message: "There are no customers to email yet." });
+    if (started.error === "daily_limit") {
+      return res.status(429).json({
+        message:
+          `The limit of ${SALE_EMAIL_DAILY_LIMIT} sale emails in 24 hours has been reached. ` +
+          `You can send more after ${formatStoreTime(started.moreAt)}.`,
+      });
+    }
+    if (started.error === "everyone_emailed") {
+      return res.status(409).json({ message: `Every customer has already received the "${sale.title}" email.` });
     }
 
-    const { progress } = started;
+    const { progress, leftAfter } = started;
+    const s = (n) => (n === 1 ? "" : "s");
     const minutes = Math.max(1, Math.ceil((progress.total * SALE_EMAIL_GAP_MS) / 60000));
     return res.status(202).json({
       message:
-        `Emailing "${sale.title}" to ${progress.total} customer${progress.total === 1 ? "" : "s"}. ` +
-        `It goes out gradually and takes about ${minutes} minute${minutes === 1 ? "" : "s"}; you can leave this page.`,
+        `Emailing "${sale.title}" to ${progress.total} customer${s(progress.total)}. ` +
+        `It takes about ${minutes} minute${s(minutes)}; you can leave this page.` +
+        (leftAfter > 0
+          ? ` ${leftAfter} customer${s(leftAfter)} will still be waiting: press the button again in 24 hours to email them.`
+          : ""),
       sale: adminView(sale.toObject()),
     });
   } catch (error) {
