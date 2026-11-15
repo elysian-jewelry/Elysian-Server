@@ -407,6 +407,8 @@ export const checkout = async (req, res, next) => {
         ...delivery,
         governorate: governorateName,
         phone_number,
+        first_name: text(first_name),
+        last_name: text(last_name),
         payment_method,
         original_subtotal: toPounds(originalSubtotalPiastres),
         sale: sale ? { sale_id: sale._id, title: sale.title, percent: sale.percent } : null,

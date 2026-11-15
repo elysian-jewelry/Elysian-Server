@@ -35,7 +35,7 @@ import {
 import { uploadProductImagesMulter } from "../middlewares/multerProductImages.middleware.js";
 import { runMissingBirthdayReminder } from "../controllers/cron.controller.js";
 import { runBirthdayPromoJob } from "../services/birthdayPromo.service.js";
-import { getVisitStats } from "../controllers/visit.controller.js";
+import { getVisitStats, getVisitors } from "../controllers/visit.controller.js";
 import { validate } from "../middlewares/validation.middleware.js";
 import { updateUserBirthdaySchema } from "../validation/admin.validation.js";
 import { saleSchema, productSalePricesSchema } from "../validation/sale.validation.js";
@@ -60,6 +60,8 @@ const router = wrapRouter(
 
 // ─── Admin visit stats ───
 router.get("/dashboard/visits", getVisitStats);
+// Each visitor in a date range, with their location, device, pages and account.
+router.get("/dashboard/visitors", getVisitors);
 
 router.delete("/users/orders", deleteUserOrdersByEmail);
 

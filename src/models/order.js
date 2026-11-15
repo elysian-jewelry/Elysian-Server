@@ -80,6 +80,16 @@ const orderSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    // The name the customer gave at checkout. Empty on orders placed before
+    // it was saved (it was only sent to the email and the sheet then).
+    first_name: {
+      type: String,
+      default: null,
+    },
+    last_name: {
+      type: String,
+      default: null,
+    },
     // config/payment.js. Orders placed before checkout offered a choice have
     // no value stored and were all cash on delivery.
     payment_method: {
