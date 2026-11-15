@@ -11,7 +11,6 @@ const publicPaths = [
   "/track-visit",
 ];
 
-
 /**
  * `norm` is already lower-cased by the caller. Express is configured for
  * case-sensitive routing, so a request whose casing differs from a real route
